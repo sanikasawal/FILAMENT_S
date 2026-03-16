@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 140" width="32" height="140">
+  <defs>
+    <linearGradient id="fil-grad-v" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#4285F4"/>
+      <stop offset="14%"  stop-color="#3BA0E8"/>
+      <stop offset="28%"  stop-color="#00BFA5"/>
+      <stop offset="42%"  stop-color="#34A853"/>
+      <stop offset="56%"  stop-color="#8BC34A"/>
+      <stop offset="70%"  stop-color="#FFB74D"/>
+      <stop offset="85%"  stop-color="#FF8A65"/>
+      <stop offset="100%" stop-color="#FF6F61"/>
+    </linearGradient>
+    <filter id="glow-v">
+      <feGaussianBlur stdDeviation="1.8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- 3 lean flowing waves — vertical, smooth sine -->
+  <path d="
+    M 16,6
+    C 16,14 6,18  6,26
+    S 16,38 16,46
+    S 26,58 26,66
+    S 16,78 16,86
+    S 6,98  6,106
+    S 16,118 16,126
+    L 16,134
+  " fill="none"
+    stroke="url(#fil-grad-v)"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    filter="url(#glow-v)"
+  />
+</svg>

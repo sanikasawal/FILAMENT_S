@@ -73,6 +73,17 @@ function getTokenViaWebAuthFlow(interactive) {
   });
 }
 
+// ── Keyboard shortcut relay ───────────────────────────────────────────────────
+chrome.commands.onCommand.addListener((command) => {
+  if (command === 'toggle-panel') {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'toggle_panel' }).catch(() => {});
+      }
+    });
+  }
+});
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'store_token') {
     chrome.storage.local.set({ filament_oauth_token: msg.token }, () => {
@@ -105,6 +116,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ token: webToken });
     })();
     return true; // async
+  }
+  if (msg.type === 'start_oauth') {
+    (async () => {
+      // Clear stale token first, then force interactive sign-in
+      chrome.storage.local.remove(['filament_oauth_token']);
+      const token = await getTokenViaWebAuthFlow(true);
+      if (token) {
+        chrome.storage.local.set({ filament_oauth_token: token, filament_token_time: Date.now() });
+        console.log('[Filament] OAuth token obtained via panel sign-in');
+      } else {
+        console.error('[Filament] OAuth failed from panel');
+      }
+      sendResponse({ token });
+    })();
+    return true;
   }
   if (msg.type === 'clear_token') {
     chrome.storage.local.remove(['filament_oauth_token'], () => {

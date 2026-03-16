@@ -2,332 +2,45 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Filament</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-
     body {
-      width: 340px;
-      background: #FFFFFF;
-      color: #202124;
-      font-family: 'Google Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 14px;
+      width: 280px;
+      background: #0D0D0F;
+      color: rgba(255,255,255,0.6);
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      font-size: 12px;
+      padding: 24px 20px;
+      text-align: center;
       -webkit-font-smoothing: antialiased;
     }
-
-    /* ── Header ─────────────────────────────────────────────── */
-    .header {
-      padding: 22px 20px 18px;
-      background: #FFFFFF;
-      border-bottom: 1px solid #E8EAED;
-      display: flex;
-      align-items: center;
-      gap: 14px;
-    }
-
-    .header-orb {
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      background: #F8F9FA;
-      border: 2px solid #E8EAED;
+    .logo { opacity: 0.4; margin-bottom: 16px; }
+    .title { font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.8); margin-bottom: 6px; }
+    .sub { font-size: 11px; color: rgba(255,255,255,0.3); line-height: 1.5; }
+    .hint {
+      margin-top: 16px;
+      font-size: 9px;
+      color: rgba(255,255,255,0.18);
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(66,133,244,0.08);
-      animation: breathe 4s ease-in-out infinite;
-      flex-shrink: 0;
+      gap: 4px;
     }
-
-    .header-orb svg {
-      width: 26px;
-      height: 26px;
-    }
-
-    .header-info h1 {
-      font-size: 20px;
-      font-weight: 600;
-      color: #202124;
-      letter-spacing: -0.01em;
-      line-height: 1.2;
-    }
-
-    .header-info p {
-      font-size: 12px;
-      color: #5F6368;
-      margin-top: 2px;
-    }
-
-    /* ── Section ────────────────────────────────────────────── */
-    .section {
-      padding: 18px 20px;
-    }
-
-    .section + .section {
-      border-top: 1px solid #F1F3F4;
-    }
-
-    .section-label {
-      font-size: 11px;
-      font-weight: 600;
-      color: #5F6368;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 10px;
-    }
-
-    /* ── Input ──────────────────────────────────────────────── */
-    input[type="url"] {
-      width: 100%;
-      background: #F8F9FA;
-      border: 1.5px solid #E8EAED;
-      border-radius: 12px;
-      padding: 10px 14px;
-      color: #202124;
-      font-size: 12px;
-      font-family: 'Google Sans Mono', 'SF Mono', 'Fira Code', monospace;
-      transition: border-color 0.2s, box-shadow 0.2s;
-      outline: none;
-    }
-
-    input[type="url"]:focus {
-      border-color: #4285F4;
-      box-shadow: 0 0 0 3px rgba(66,133,244,0.12);
-      background: #FFFFFF;
-    }
-
-    input[type="url"]::placeholder {
-      color: #9AA0A6;
-    }
-
-    /* ── Buttons ────────────────────────────────────────────── */
-    .btn-row {
-      display: flex;
-      gap: 8px;
-      margin-top: 12px;
-    }
-
-    .btn {
-      flex: 1;
-      padding: 10px 16px;
-      border-radius: 100px;
-      border: 1.5px solid #E8EAED;
-      background: #FFFFFF;
-      color: #202124;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s cubic-bezier(0.2,0,0,1);
-      font-family: inherit;
-    }
-
-    .btn:hover {
-      background: #F8F9FA;
-      border-color: #DADCE0;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-    }
-
-    .btn:active {
-      transform: scale(0.97);
-      transition-duration: 0.08s;
-    }
-
-    .btn:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-      transform: none !important;
-    }
-
-    .btn-primary {
-      background: #4285F4;
-      border-color: #4285F4;
-      color: #FFFFFF;
-    }
-
-    .btn-primary:hover {
-      background: #3B78E7;
-      border-color: #3B78E7;
-      box-shadow: 0 2px 8px rgba(66,133,244,0.25);
-    }
-
-    /* ── Connection Result ──────────────────────────────────── */
-    .conn-result {
-      margin-top: 10px;
-      padding: 8px 12px;
-      border-radius: 12px;
-      font-size: 12px;
-      font-weight: 600;
-      display: none;
-      align-items: center;
-      gap: 6px;
-      animation: slideIn 0.3s cubic-bezier(0.2,0,0,1);
-    }
-
-    .conn-result.visible { display: flex; }
-
-    .conn-result.success {
-      background: rgba(52,168,83,0.08);
-      border: 1px solid rgba(52,168,83,0.20);
-      color: #34A853;
-    }
-
-    .conn-result.error {
-      background: rgba(234,67,53,0.06);
-      border: 1px solid rgba(234,67,53,0.16);
-      color: #EA4335;
-    }
-
-    .conn-result.testing {
-      background: rgba(251,188,5,0.08);
-      border: 1px solid rgba(251,188,5,0.20);
-      color: #E37400;
-    }
-
-    .conn-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: currentColor;
-      flex-shrink: 0;
-    }
-
-    .conn-result.testing .conn-dot {
-      animation: blink 1.2s ease-in-out infinite;
-    }
-
-    /* ── Auth Status ───────────────────────────────────────── */
-    .auth-status {
-      padding: 8px 12px;
-      border-radius: 12px;
-      font-size: 12px;
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-bottom: 10px;
-    }
-
-    .auth-status.connected {
-      background: rgba(52,168,83,0.08);
-      border: 1px solid rgba(52,168,83,0.20);
-      color: #34A853;
-    }
-
-    .auth-status.disconnected {
-      background: rgba(234,67,53,0.06);
-      border: 1px solid rgba(234,67,53,0.16);
-      color: #EA4335;
-    }
-
-    /* ── Status Toast ──────────────────────────────────────── */
-    .status-toast {
-      position: fixed;
-      bottom: 12px;
-      left: 50%;
-      transform: translateX(-50%) translateY(50px);
-      padding: 8px 18px;
-      border-radius: 100px;
-      background: #202124;
-      color: #FFFFFF;
-      font-size: 12px;
-      font-weight: 600;
-      opacity: 0;
-      transition: all 0.3s cubic-bezier(0.2,0,0,1);
-      pointer-events: none;
-      white-space: nowrap;
-    }
-
-    .status-toast.show {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-
-    /* ── Footer ─────────────────────────────────────────────── */
-    .footer {
-      padding: 14px 20px;
-      border-top: 1px solid #F1F3F4;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .footer-version {
-      font-size: 11px;
-      color: #9AA0A6;
-    }
-
-    .footer-label {
-      font-size: 11px;
-      font-weight: 600;
-      background: linear-gradient(90deg, #4285F4, #34A853, #FBBC05, #EA4335);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    /* ── Animations ─────────────────────────────────────────── */
-    @keyframes breathe {
-      0%, 100% { box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(66,133,244,0.08); }
-      50% { box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(66,133,244,0.18); }
-    }
-
-    @keyframes slideIn {
-      0% { transform: translateY(4px); opacity: 0; }
-      100% { transform: translateY(0); opacity: 1; }
-    }
-
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.25; }
+    key {
+      padding: 1px 4px;
+      border-radius: 3px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+      font-family: 'SF Mono', monospace;
+      font-size: 8px;
+      color: rgba(255,255,255,0.25);
     }
   </style>
 </head>
 <body>
-  <div class="header">
-    <div class="header-orb">
-      <svg viewBox="0 0 24 24" fill="none"><circle cx="10" cy="12.5" r="7.5" fill="#4285F4"/><path d="M5.5 15c0 1.8 2 3.5 4.5 3.5s4.5-1.7 4.5-3.5c-1.5 1-3 1.3-4.5 1.3S7 16 5.5 15z" fill="#D2E3FC"/><path d="M4 10C2 9 1.5 6.5 3 5.5c.5 1.5 2 3 3.5 3.2L4 10z" fill="#34A853"/><path d="M2.5 14.5L.8 12l1.7.4.5 2z" fill="#EA4335"/><circle cx="13.5" cy="10" r="2.2" fill="white"/><circle cx="14" cy="9.5" r="1.1" fill="#202124"/><circle cx="14.5" cy="9" r="0.4" fill="white"/><path d="M17.5 12L21 10.5 17.5 9z" fill="#FBBC05"/></svg>
-    </div>
-    <div class="header-info">
-      <h1>Filament</h1>
-      <p>ambient intelligence for your workspace</p>
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="section-label">Google Account</div>
-    <div id="auth-status" class="auth-status disconnected">
-      <span class="conn-dot"></span>
-      <span id="auth-status-text">Not signed in</span>
-    </div>
-    <div class="btn-row">
-      <button class="btn btn-primary" id="signin-btn" style="background:#4285F4;border-color:#4285F4;">Sign in with Google</button>
-      <button class="btn" id="signout-btn" style="display:none;">Sign out</button>
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="section-label">Connection</div>
-    <div class="input-wrap">
-      <input type="url" id="ws-url" placeholder="ws://localhost:8080/ws" spellcheck="false">
-    </div>
-    <div class="btn-row">
-      <button class="btn" id="test-btn">Test</button>
-      <button class="btn btn-primary" id="save-btn">Save</button>
-    </div>
-    <div class="conn-result" id="conn-result">
-      <span class="conn-dot"></span>
-      <span class="conn-text"></span>
-    </div>
-  </div>
-
-  <div class="footer">
-    <span class="footer-version">v1.0.0</span>
-    <span class="footer-label">Build With AI NYC 2026</span>
-  </div>
-
-  <div class="status-toast" id="status-toast"></div>
-
-  <script src="popup.js"></script>
+  <div class="title">Filament</div>
+  <div class="sub">Look for the edge tab on the right side<br>of any page to open Filament.</div>
+  <div class="hint"><key>&#x2318;</key><key>&#x21E7;</key><key>F</key> to toggle</div>
 </body>
 </html>

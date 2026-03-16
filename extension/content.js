@@ -4,12 +4,13 @@
 // CONFIGURATION
 // ══════════════════════════════════════════════════════════════════════════════
 const DEFAULT_WS_URL = 'wss://filament-orchestrator-sjs5thynia-uc.a.run.app/ws';
-const FRAME_INTERVAL_MS = 3000; // 1 frame every 3s — enough for the model, less noise
+const FRAME_INTERVAL_MS = 3000;
 const AUDIO_SAMPLE_RATE = 16000;
 const RECONNECT_DELAY_MS = 2000;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const MAX_MESSAGES = 50;
 const TOAST_DURATION_MS = 7000;
+const MAX_TOASTS = 2;
 
 // ══════════════════════════════════════════════════════════════════════════════
 // STATE
@@ -22,6 +23,9 @@ let isMuted = false;
 let isPanelOpen = false;
 let unreadCount = 0;
 let currentState = 'idle';
+let currentView = 'timeline';
+let isSignedIn = false;
+let tokenTimestamp = null;
 let screenStream = null;
 let micStream = null;
 let captureCanvas = null;
@@ -32,26 +36,25 @@ let workletNode = null;
 let audioCtxOut = null;
 const messages = [];
 
-// Load saved WS URL
-chrome.storage.local.get(['filament_ws_url'], (r) => {
+// Load saved settings
+chrome.storage.local.get(['filament_ws_url', 'filament_oauth_token', 'filament_token_time'], (r) => {
   if (r.filament_ws_url) wsUrl = r.filament_ws_url;
+  if (r.filament_oauth_token && typeof r.filament_oauth_token === 'string' && r.filament_oauth_token.length > 10) {
+    isSignedIn = true;
+  }
+  if (r.filament_token_time) tokenTimestamp = r.filament_token_time;
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SVG ICONS
+// SVG ICONS (stroke style, no emojis)
 // ══════════════════════════════════════════════════════════════════════════════
-// Friendly bird mascot — uses all 4 Google colors
-const BIRD = `<svg viewBox="0 0 24 24" fill="none"><circle cx="10" cy="12.5" r="7.5" fill="#4285F4"/><path d="M5.5 15c0 1.8 2 3.5 4.5 3.5s4.5-1.7 4.5-3.5c-1.5 1-3 1.3-4.5 1.3S7 16 5.5 15z" fill="#D2E3FC"/><path d="M4 10C2 9 1.5 6.5 3 5.5c.5 1.5 2 3 3.5 3.2L4 10z" fill="#34A853"/><path d="M2.5 14.5L.8 12l1.7.4.5 2z" fill="#EA4335"/><circle cx="13.5" cy="10" r="2.2" fill="white"/><circle cx="14" cy="9.5" r="1.1" fill="#202124"/><circle cx="14.5" cy="9" r="0.4" fill="white"/><path d="M17.5 12L21 10.5 17.5 9z" fill="#FBBC05"/></svg>`;
-
 const ICON = {
-  mic: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>',
-  micOff: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" x2="12" y1="19" y2="22"/></svg>',
-  power: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" x2="12" y1="2" y2="12"/></svg>',
-  play: '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg>',
-  x: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
-  sparkle: '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z"/></svg>',
-  zap: '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
-  alert: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>',
+  mic: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>',
+  micOff: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" x2="12" y1="19" y2="22"/></svg>',
+  x: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+  gear: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>',
+  screen: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>',
+  micPerm: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>',
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -60,74 +63,185 @@ const ICON = {
 function injectUI() {
   if (document.getElementById('filament-root')) return;
 
+  const logoH = chrome.runtime.getURL('logo-filament.svg');
+  const logoV = chrome.runtime.getURL('logo-filament-vertical.svg');
+
   const root = document.createElement('div');
   root.id = 'filament-root';
   root.innerHTML = `
     <div id="fil-toasts"></div>
 
-    <div id="fil-panel">
-      <div class="fil-panel-header">
-        <div class="fil-panel-brand">
-          <div class="fil-mini-orb">${BIRD}</div>
-          <span class="fil-panel-title">Filament</span>
+    <div id="fil-container" class="st-idle">
+      <div id="fil-panel">
+        <div class="fil-panel-header">
+          <div class="fil-header-glow"></div>
+          <img src="${logoH}" class="fil-header-logo" alt="" />
+          <span class="fil-header-name" id="fil-header-name">Filament</span>
+          <div class="fil-header-spacer"></div>
+          <div class="fil-header-status" id="fil-header-status">
+            <span class="fil-status-dot" id="fil-status-dot"></span>
+            <span id="fil-status-label">Ready</span>
+          </div>
+          <button class="fil-close-btn" id="fil-close-btn" aria-label="Close panel">${ICON.x}</button>
         </div>
-        <div id="fil-status-pill">
-          <span class="fil-status-dot"></span>
-          <span class="fil-status-label">Ready</span>
-        </div>
-        <button class="fil-close-btn" id="fil-close-btn" aria-label="Close panel">${ICON.x}</button>
-      </div>
-      <div class="fil-panel-body" id="fil-messages">
-        <div class="fil-empty" id="fil-empty">
-          <div class="fil-empty-icon">${BIRD}</div>
-          <p class="fil-empty-text">Tap the orb to begin</p>
-          <p class="fil-empty-sub">Filament watches quietly and speaks only when it has something worth saying</p>
-        </div>
-      </div>
-      <div class="fil-panel-footer" id="fil-footer">
-        <button class="fil-action-btn" id="fil-mute-btn">${ICON.mic} Mute</button>
-        <button class="fil-action-btn danger" id="fil-stop-btn">${ICON.power} Stop</button>
-      </div>
-    </div>
 
-    <div id="fil-orb-wrap" class="idle">
-      <div class="fil-ring fil-ring-1"></div>
-      <div class="fil-ring fil-ring-2"></div>
-      <div class="fil-ring fil-ring-3"></div>
-      <button id="fil-orb" aria-label="Filament AI assistant">
-        <span class="fil-orb-icon">${BIRD}</span>
-      </button>
-      <div id="fil-conn-dot"></div>
-      <div id="fil-count-badge"></div>
+        <div id="fil-panel-body">
+          <!-- Timeline View -->
+          <div id="fil-view-timeline" class="fil-view active">
+            <div class="fil-timeline" id="fil-messages">
+              <div class="fil-empty" id="fil-empty">
+                <div class="fil-empty-icon"><img src="${logoH}" alt="" /></div>
+                <p class="fil-empty-text">Tap the tab to begin</p>
+                <p class="fil-empty-sub">Filament will speak when it has<br>something worth saying</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Onboarding View -->
+          <div id="fil-view-onboarding" class="fil-view">
+            <div class="fil-onboarding" id="fil-onboarding-content">
+              <div class="ob-logo"><img src="${logoH}" alt="" /></div>
+              <div class="ob-title" id="fil-ob-title">Welcome to Filament</div>
+              <div class="ob-sub" id="fil-ob-sub">Sign in to let Filament surface insights<br>from your Gmail and Google Drive</div>
+              <div id="fil-ob-auth-area">
+                <button class="btn-google" id="fil-signin-btn">
+                  <span class="g-icon">G</span>
+                  Sign in with Google
+                </button>
+              </div>
+              <div class="ob-divider"></div>
+              <div class="field-group">
+                <div class="field-label">Backend Server</div>
+                <input class="field-input" id="fil-ws-input" type="text" spellcheck="false" />
+                <div class="conn-test" id="fil-conn-test" style="display:none;">
+                  <span class="ct-dot"></span>
+                  <span id="fil-conn-test-text"></span>
+                </div>
+                <div class="field-row">
+                  <button class="field-btn" id="fil-test-btn">Test</button>
+                  <button class="field-btn primary" id="fil-save-btn">Save</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Settings View -->
+          <div id="fil-view-settings" class="fil-view">
+            <div class="fil-onboarding top-align">
+              <div class="signed-in-row" id="fil-settings-auth">
+                <div class="si-avatar" id="fil-settings-avatar">?</div>
+                <div class="si-info">
+                  <div class="si-name" id="fil-settings-name">Not signed in</div>
+                  <div class="si-email" id="fil-settings-email"></div>
+                </div>
+                <span class="si-check" id="fil-settings-check">&#x2713;</span>
+              </div>
+              <div class="token-row" id="fil-token-row" style="display:none;">
+                <div class="token-status" id="fil-token-status"></div>
+                <div class="token-time" id="fil-token-time"></div>
+              </div>
+              <div class="field-group">
+                <div class="field-label">Backend Server</div>
+                <input class="field-input" id="fil-settings-ws" type="text" spellcheck="false" />
+                <div class="conn-test" id="fil-settings-conn" style="display:none;">
+                  <span class="ct-dot"></span>
+                  <span id="fil-settings-conn-text"></span>
+                </div>
+                <div class="field-row">
+                  <button class="field-btn" id="fil-settings-test">Test</button>
+                  <button class="field-btn primary" id="fil-settings-save">Save</button>
+                </div>
+              </div>
+              <div class="ob-divider"></div>
+              <div class="fil-settings-footer">
+                <span class="fil-version">Filament v1.0.0</span>
+                <span class="kbd"><key>&#x2318;</key><key>&#x21E7;</key><key>F</key> toggle</span>
+              </div>
+              <button class="sign-out-link" id="fil-signout-btn">Sign out</button>
+            </div>
+          </div>
+
+          <!-- Permission Explainer View -->
+          <div id="fil-view-permissions" class="fil-view">
+            <div class="fil-onboarding">
+              <div class="ob-logo"><img src="${logoH}" alt="" /></div>
+              <div class="ob-title">Permissions needed</div>
+              <div class="ob-sub">Filament needs your screen and microphone<br>to watch and listen</div>
+              <div class="perm-list">
+                <div class="perm-item">
+                  <div class="perm-icon screen">${ICON.screen}</div>
+                  <div class="perm-info">
+                    <div class="perm-name">Screen capture</div>
+                    <div class="perm-desc">See what you're working on to give relevant insights</div>
+                  </div>
+                </div>
+                <div class="perm-item">
+                  <div class="perm-icon mic">${ICON.micPerm}</div>
+                  <div class="perm-info">
+                    <div class="perm-name">Microphone</div>
+                    <div class="perm-desc">Hear your voice so Filament can speak back</div>
+                  </div>
+                </div>
+              </div>
+              <button class="btn-google" id="fil-perm-continue">Continue</button>
+              <div class="fil-privacy">Your screen and audio are never stored — only analyzed in real-time</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="fil-panel-footer" id="fil-footer">
+          <div class="ft-avatar" id="fil-ft-avatar">?</div>
+          <div class="ft-dot off" id="fil-ft-dot"></div>
+          <div class="ft-label" id="fil-ft-label">Ready</div>
+          <button class="ft-btn start" id="fil-start-btn" style="display:none;">Start</button>
+          <button class="ft-btn" id="fil-mute-btn" style="display:none;">Mute</button>
+          <button class="ft-btn stop" id="fil-stop-btn" style="display:none;">Stop</button>
+          <button class="ft-btn start" id="fil-reconnect-btn" style="display:none;">Reconnect</button>
+          <button class="ft-gear" id="fil-gear-btn" aria-label="Settings">${ICON.gear}</button>
+        </div>
+      </div>
+
+      <div class="fil-edge-tab" id="fil-edge-tab">
+        <div class="fil-tab-glow"></div>
+        <div class="fil-tab-badge" id="fil-tab-badge"></div>
+        <div class="fil-edge-wave"><img src="${logoV}" alt="Filament" /></div>
+      </div>
     </div>
   `;
 
   document.body.appendChild(root);
 
-  // Event listeners
-  document.getElementById('fil-orb').addEventListener('click', onOrbClick);
-  document.getElementById('fil-close-btn').addEventListener('click', (e) => {
-    e.stopPropagation();
-    closePanel();
-  });
-  document.getElementById('fil-mute-btn').addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleMute();
-  });
-  document.getElementById('fil-stop-btn').addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (isActive) deactivateFilament();
-    else activateFilament();
-  });
+  // ── Event Listeners ──
+  document.getElementById('fil-edge-tab').addEventListener('click', onTabClick);
+  document.getElementById('fil-close-btn').addEventListener('click', (e) => { e.stopPropagation(); closePanel(); });
+  document.getElementById('fil-mute-btn').addEventListener('click', (e) => { e.stopPropagation(); toggleMute(); });
+  document.getElementById('fil-stop-btn').addEventListener('click', (e) => { e.stopPropagation(); deactivateFilament(); });
+  document.getElementById('fil-start-btn').addEventListener('click', (e) => { e.stopPropagation(); activateFilament(); });
+  document.getElementById('fil-reconnect-btn').addEventListener('click', (e) => { e.stopPropagation(); activateFilament(); });
+  document.getElementById('fil-gear-btn').addEventListener('click', (e) => { e.stopPropagation(); toggleSettings(); });
+  document.getElementById('fil-signin-btn').addEventListener('click', (e) => { e.stopPropagation(); startOAuth(); });
+  document.getElementById('fil-signout-btn').addEventListener('click', (e) => { e.stopPropagation(); signOut(); });
+  document.getElementById('fil-perm-continue').addEventListener('click', (e) => { e.stopPropagation(); startCapture(); });
+  document.getElementById('fil-test-btn').addEventListener('click', (e) => { e.stopPropagation(); testConnection('fil-conn-test', 'fil-conn-test-text', 'fil-ws-input'); });
+  document.getElementById('fil-save-btn').addEventListener('click', (e) => { e.stopPropagation(); saveSettings('fil-ws-input'); });
+  document.getElementById('fil-settings-test').addEventListener('click', (e) => { e.stopPropagation(); testConnection('fil-settings-conn', 'fil-settings-conn-text', 'fil-settings-ws'); });
+  document.getElementById('fil-settings-save').addEventListener('click', (e) => { e.stopPropagation(); saveSettings('fil-settings-ws'); });
 
-  // Click outside to close panel
+  // Click outside to close
   document.addEventListener('click', (e) => {
     if (!isPanelOpen) return;
-    const root = document.getElementById('filament-root');
-    if (root && !root.contains(e.target)) closePanel();
+    const r = document.getElementById('filament-root');
+    if (r && !r.contains(e.target)) closePanel();
   });
 
-  updateFooterVisibility();
+  // Initialize
+  const wsInput = document.getElementById('fil-ws-input');
+  const settingsWs = document.getElementById('fil-settings-ws');
+  if (wsInput) wsInput.value = wsUrl;
+  if (settingsWs) settingsWs.value = wsUrl;
+
+  updateFooter();
+  checkAuthStatus();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -135,50 +249,98 @@ function injectUI() {
 // ══════════════════════════════════════════════════════════════════════════════
 function setState(newState) {
   currentState = newState;
-  const wrap = document.getElementById('fil-orb-wrap');
-  if (!wrap) return;
-  wrap.className = newState;
-  updateStatusPill(newState);
+  const container = document.getElementById('fil-container');
+  if (!container) return;
+  container.className = `st-${newState}`;
+  updateHeaderStatus(newState);
+  updateFooter();
 }
 
-function updateStatusPill(state) {
-  const pill = document.getElementById('fil-status-pill');
-  if (!pill) return;
+function updateHeaderStatus(state) {
+  const label = document.getElementById('fil-status-label');
+  const dot = document.getElementById('fil-status-dot');
+  if (!label) return;
 
   const labels = {
     idle: 'Ready',
-    connecting: 'Connecting...',
-    listening: 'Watching...',
+    connecting: 'Connecting',
+    listening: 'Listening',
     speaking: 'Speaking',
     muted: 'Muted',
     error: 'Error',
+    searching: 'Searching Gmail',
   };
 
-  pill.className = state;
-  pill.querySelector('.fil-status-label').textContent = labels[state] || state;
-}
-
-function setConnectionDot(status) {
-  const dot = document.getElementById('fil-conn-dot');
-  if (!dot) return;
-  dot.className = status === 'hidden' ? '' : `visible ${status}`;
-}
-
-function updateFooterVisibility() {
-  const footer = document.getElementById('fil-footer');
-  if (footer) footer.style.display = isActive ? 'flex' : 'none';
-}
-
-function updateStopButton() {
-  const btn = document.getElementById('fil-stop-btn');
-  if (!btn) return;
-  if (isActive) {
-    btn.innerHTML = `${ICON.power} Stop`;
-    btn.className = 'fil-action-btn danger';
-  } else {
-    btn.innerHTML = `${ICON.play} Start`;
-    btn.className = 'fil-action-btn success';
+  label.textContent = labels[state] || state;
+  if (dot) {
+    dot.className = 'fil-status-dot' + ((state === 'listening' || state === 'connecting' || state === 'searching') ? ' blink' : '');
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VIEW SWITCHING
+// ══════════════════════════════════════════════════════════════════════════════
+function showView(name) {
+  currentView = name;
+  const views = ['timeline', 'onboarding', 'settings', 'permissions'];
+  views.forEach(v => {
+    const el = document.getElementById(`fil-view-${v}`);
+    if (el) {
+      el.classList.toggle('active', v === name);
+    }
+  });
+  const headerName = document.getElementById('fil-header-name');
+  if (headerName) headerName.textContent = name === 'settings' ? 'Settings' : 'Filament';
+  const gear = document.getElementById('fil-gear-btn');
+  if (gear) gear.classList.toggle('active', name === 'settings');
+}
+
+function toggleSettings() {
+  if (currentView === 'settings') {
+    showView('timeline');
+  } else {
+    updateSettingsView();
+    showView('settings');
+  }
+}
+
+function updateSettingsView() {
+  const nameEl = document.getElementById('fil-settings-name');
+  const emailEl = document.getElementById('fil-settings-email');
+  const avatarEl = document.getElementById('fil-settings-avatar');
+  const wsEl = document.getElementById('fil-settings-ws');
+  if (wsEl) wsEl.value = wsUrl;
+
+  if (isSignedIn) {
+    if (nameEl) nameEl.textContent = 'Signed in';
+    if (emailEl) emailEl.textContent = '';
+    if (avatarEl) avatarEl.textContent = 'V';
+    updateTokenStatus();
+  } else {
+    if (nameEl) nameEl.textContent = 'Not signed in';
+    if (emailEl) emailEl.textContent = '';
+    if (avatarEl) avatarEl.textContent = '?';
+  }
+}
+
+function updateTokenStatus() {
+  const row = document.getElementById('fil-token-row');
+  const status = document.getElementById('fil-token-status');
+  const time = document.getElementById('fil-token-time');
+  if (!row || !status || !time) return;
+
+  if (!tokenTimestamp) {
+    row.style.display = 'none';
+    return;
+  }
+
+  row.style.display = 'flex';
+  const ageMin = Math.floor((Date.now() - tokenTimestamp) / 60000);
+  const expired = ageMin > 55;
+
+  status.className = 'token-status ' + (expired ? 'expired' : 'valid');
+  status.textContent = expired ? 'Token expired' : 'Token valid';
+  time.textContent = expired ? `Expired ${ageMin - 55}m ago` : `Refreshed ${ageMin}m ago`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -186,7 +348,9 @@ function updateStopButton() {
 // ══════════════════════════════════════════════════════════════════════════════
 function openPanel() {
   const panel = document.getElementById('fil-panel');
+  const tab = document.getElementById('fil-edge-tab');
   if (panel) panel.classList.add('open');
+  if (tab) tab.classList.add('active');
   isPanelOpen = true;
   unreadCount = 0;
   updateBadge();
@@ -194,19 +358,142 @@ function openPanel() {
 
 function closePanel() {
   const panel = document.getElementById('fil-panel');
+  const tab = document.getElementById('fil-edge-tab');
   if (panel) panel.classList.remove('open');
+  if (tab && !isActive) tab.classList.remove('active');
   isPanelOpen = false;
+  if (currentView === 'settings') showView('timeline');
 }
 
-function togglePanel() {
-  isPanelOpen ? closePanel() : openPanel();
+function onTabClick(e) {
+  e.stopPropagation();
+  if (isPanelOpen) {
+    closePanel();
+  } else {
+    checkAuthStatus();
+    openPanel();
+  }
+}
+
+function checkAuthStatus() {
+  try {
+    chrome.storage.local.get(['filament_oauth_token', 'filament_token_time'], (r) => {
+      if (chrome.runtime.lastError) return;
+      const token = r.filament_oauth_token;
+      isSignedIn = token && typeof token === 'string' && token.length > 10;
+      tokenTimestamp = r.filament_token_time || null;
+
+      if (!isSignedIn && !isActive) {
+        showView('onboarding');
+        updateOnboardingForSignIn();
+      } else if (isSignedIn && !isActive) {
+        showView('onboarding');
+        updateOnboardingForReady();
+      } else {
+        showView('timeline');
+      }
+      updateFooter();
+    });
+  } catch (_) {}
+}
+
+function updateOnboardingForSignIn() {
+  const title = document.getElementById('fil-ob-title');
+  const sub = document.getElementById('fil-ob-sub');
+  const area = document.getElementById('fil-ob-auth-area');
+  if (title) title.textContent = 'Welcome to Filament';
+  if (sub) sub.innerHTML = 'Sign in to let Filament surface insights<br>from your Gmail and Google Drive';
+  if (area) {
+    area.innerHTML = `
+      <button class="btn-google" id="fil-signin-btn">
+        <span class="g-icon">G</span>
+        Sign in with Google
+      </button>
+    `;
+    document.getElementById('fil-signin-btn').addEventListener('click', (e) => { e.stopPropagation(); startOAuth(); });
+  }
+}
+
+function updateOnboardingForReady() {
+  const title = document.getElementById('fil-ob-title');
+  const sub = document.getElementById('fil-ob-sub');
+  const area = document.getElementById('fil-ob-auth-area');
+  if (title) title.textContent = 'Ready to go';
+  if (sub) sub.innerHTML = 'Tap Start to begin watching your screen<br>and listening for context';
+  if (area) {
+    area.innerHTML = `
+      <div class="signed-in-row">
+        <div class="si-avatar">V</div>
+        <div class="si-info">
+          <div class="si-name">Signed in to Google</div>
+          <div class="si-email"></div>
+        </div>
+        <span class="si-check">&#x2713;</span>
+      </div>
+    `;
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// MESSAGES
+// FOOTER
 // ══════════════════════════════════════════════════════════════════════════════
-function addMessage(text, type = 'nudge') {
-  const msg = { text, type, timestamp: Date.now() };
+function updateFooter() {
+  const startBtn = document.getElementById('fil-start-btn');
+  const muteBtn = document.getElementById('fil-mute-btn');
+  const stopBtn = document.getElementById('fil-stop-btn');
+  const reconnectBtn = document.getElementById('fil-reconnect-btn');
+  const dotEl = document.getElementById('fil-ft-dot');
+  const labelEl = document.getElementById('fil-ft-label');
+  const avatarEl = document.getElementById('fil-ft-avatar');
+
+  if (!startBtn) return;
+
+  // Hide all action buttons first
+  startBtn.style.display = 'none';
+  muteBtn.style.display = 'none';
+  stopBtn.style.display = 'none';
+  reconnectBtn.style.display = 'none';
+
+  // Avatar
+  if (avatarEl) {
+    avatarEl.textContent = isSignedIn ? 'V' : '?';
+    avatarEl.classList.toggle('hidden', !isSignedIn && !isActive);
+  }
+
+  if (currentState === 'error' && !isActive) {
+    // Disconnected
+    if (dotEl) dotEl.className = 'ft-dot err';
+    if (labelEl) labelEl.textContent = 'Disconnected';
+    reconnectBtn.style.display = '';
+  } else if (isActive && isMuted) {
+    if (dotEl) dotEl.className = 'ft-dot warn';
+    if (labelEl) labelEl.textContent = 'Muted';
+    muteBtn.style.display = '';
+    muteBtn.textContent = 'Unmute';
+    muteBtn.className = 'ft-btn muted';
+    stopBtn.style.display = '';
+  } else if (isActive) {
+    if (dotEl) dotEl.className = 'ft-dot on';
+    if (labelEl) labelEl.textContent = 'Connected';
+    muteBtn.style.display = '';
+    muteBtn.textContent = 'Mute';
+    muteBtn.className = 'ft-btn';
+    stopBtn.style.display = '';
+  } else if (isSignedIn) {
+    if (dotEl) dotEl.className = 'ft-dot off';
+    if (labelEl) labelEl.textContent = 'Ready';
+    startBtn.style.display = '';
+  } else {
+    if (dotEl) dotEl.className = 'ft-dot off';
+    if (labelEl) labelEl.textContent = 'Not signed in';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MESSAGES (Timeline)
+// ══════════════════════════════════════════════════════════════════════════════
+function addMessage(text, type = 'nudge', source = null) {
+  const msg = { text, type, source, timestamp: Date.now(), read: isPanelOpen };
   messages.unshift(msg);
   if (messages.length > MAX_MESSAGES) messages.pop();
 
@@ -234,18 +521,37 @@ function addMessage(text, type = 'nudge') {
 
 function createMessageEl(msg) {
   const div = document.createElement('div');
-  div.className = 'fil-msg';
+  div.className = 'tl-item';
 
-  const labelIcons = { nudge: ICON.sparkle, error: ICON.alert, system: ICON.zap };
-  const labelClass = msg.type === 'nudge' ? '' : ` ${msg.type}`;
-  const labelText = msg.type === 'nudge' ? 'Insight' : msg.type === 'error' ? 'Notice' : 'Activity';
+  // Dot class
+  let dotClass = 'tl-dot';
+  if (msg.type === 'error') dotClass += ' error';
+  else if (msg.source === 'morning_brief') dotClass += ' morning';
+  else if (msg.source === 'intent') dotClass += ' intent';
+  else if (msg.read) dotClass += ' read';
+  else if (msg.type === 'system') dotClass += ' faded';
+  else dotClass += ' new';
+
+  // Tag
+  let tagHtml = '';
+  const tagMap = {
+    morning_brief: '<div class="tl-tag morning">Morning Brief</div>',
+    intent: '<div class="tl-tag intent">Intent</div>',
+    gmail: '<div class="tl-tag gmail">Gmail</div>',
+    drive: '<div class="tl-tag drive">Drive</div>',
+  };
+  if (msg.source && tagMap[msg.source]) tagHtml = tagMap[msg.source];
+
+  // Dim class for system messages
+  const textClass = msg.type === 'system' ? 'tl-text dim' : 'tl-text';
 
   div.innerHTML = `
-    <div class="fil-msg-header">
-      <span class="fil-msg-label${labelClass}">${labelIcons[msg.type] || ICON.sparkle} ${labelText}</span>
-      <span class="fil-msg-time">${relativeTime(msg.timestamp)}</span>
+    <div class="${dotClass}"></div>
+    <div class="tl-body">
+      ${tagHtml}
+      <div class="tl-time">${relativeTime(msg.timestamp)}</div>
+      <p class="${textClass}">${escapeHtml(msg.text)}</p>
     </div>
-    <p class="fil-msg-text">${escapeHtml(msg.text)}</p>
   `;
   return div;
 }
@@ -269,14 +575,13 @@ function escapeHtml(str) {
 // BADGE
 // ══════════════════════════════════════════════════════════════════════════════
 function updateBadge() {
-  const badge = document.getElementById('fil-count-badge');
+  const badge = document.getElementById('fil-tab-badge');
   if (!badge) return;
   if (unreadCount > 0) {
-    badge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+    badge.textContent = unreadCount > 9 ? '9+' : unreadCount;
     badge.classList.add('visible');
-    // Trigger bump animation
     badge.classList.remove('bump');
-    void badge.offsetWidth; // reflow
+    void badge.offsetWidth;
     badge.classList.add('bump');
   } else {
     badge.classList.remove('visible');
@@ -290,26 +595,25 @@ function showToast(text, title = 'Filament', duration = TOAST_DURATION_MS) {
   const container = document.getElementById('fil-toasts');
   if (!container) return;
 
-  // Max 3 toasts
-  while (container.children.length >= 3) {
+  while (container.children.length >= MAX_TOASTS) {
     container.removeChild(container.firstChild);
   }
 
+  const logoUrl = chrome.runtime.getURL('logo-filament.svg');
   const toast = document.createElement('div');
   toast.className = 'fil-toast';
   toast.innerHTML = `
-    <div class="fil-toast-icon">${ICON.sparkle}</div>
+    <div class="fil-toast-icon"><img src="${logoUrl}" alt="" /></div>
     <div class="fil-toast-content">
       <div class="fil-toast-title">${escapeHtml(title)}</div>
       <div class="fil-toast-text">${escapeHtml(text)}</div>
     </div>
-    <button class="fil-toast-close">${ICON.x}</button>
+    <button class="fil-toast-close" aria-label="Dismiss">${ICON.x}</button>
     <div class="fil-toast-bar" style="width:100%"></div>
   `;
 
   container.appendChild(toast);
 
-  // Progress bar countdown
   const bar = toast.querySelector('.fil-toast-bar');
   const start = Date.now();
   const tick = () => {
@@ -320,10 +624,7 @@ function showToast(text, title = 'Filament', duration = TOAST_DURATION_MS) {
   };
   requestAnimationFrame(tick);
 
-  // Auto-dismiss
   const timer = setTimeout(() => dismissToast(toast), duration);
-
-  // Close button
   toast.querySelector('.fil-toast-close').addEventListener('click', () => {
     clearTimeout(timer);
     dismissToast(toast);
@@ -337,40 +638,134 @@ function dismissToast(toast) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// ORB CLICK
+// AUTH (OAuth via background.js)
 // ══════════════════════════════════════════════════════════════════════════════
-async function onOrbClick(e) {
-  e.stopPropagation();
-  if (!isActive) {
-    openPanel();
-    await activateFilament();
-  } else {
-    togglePanel();
-  }
+function startOAuth() {
+  const btn = document.getElementById('fil-signin-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Signing in...'; }
+
+  chrome.runtime.sendMessage({ type: 'start_oauth' }, (response) => {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<span class="g-icon">G</span> Sign in with Google'; }
+    if (chrome.runtime.lastError) {
+      showToast('Sign-in failed: ' + chrome.runtime.lastError.message);
+      return;
+    }
+    if (response && response.token) {
+      isSignedIn = true;
+      tokenTimestamp = Date.now();
+      checkAuthStatus();
+      showToast('Signed in to Google', 'Filament');
+    } else {
+      showToast('Sign-in cancelled or failed');
+    }
+  });
 }
 
-async function activateFilament() {
+function signOut() {
+  chrome.runtime.sendMessage({ type: 'clear_token' }, () => {
+    isSignedIn = false;
+    tokenTimestamp = null;
+    if (isActive) deactivateFilament();
+    checkAuthStatus();
+    showToast('Signed out');
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SETTINGS (WebSocket URL)
+// ══════════════════════════════════════════════════════════════════════════════
+function testConnection(resultId, textId, inputId) {
+  const url = document.getElementById(inputId)?.value?.trim();
+  if (!url) return;
+
+  const resultEl = document.getElementById(resultId);
+  const textEl = document.getElementById(textId);
+  if (!resultEl || !textEl) return;
+
+  resultEl.style.display = 'flex';
+  resultEl.className = 'conn-test testing';
+  textEl.textContent = 'Connecting...';
+
+  const testWs = new WebSocket(url);
+  const timeout = setTimeout(() => {
+    testWs.close();
+    resultEl.className = 'conn-test fail';
+    textEl.textContent = 'Timeout — backend not reachable';
+  }, 5000);
+
+  testWs.onopen = () => {
+    clearTimeout(timeout);
+    testWs.close();
+    resultEl.className = 'conn-test success';
+    textEl.textContent = 'Connected';
+  };
+  testWs.onerror = () => {
+    clearTimeout(timeout);
+    resultEl.className = 'conn-test fail';
+    textEl.textContent = 'Connection failed — is the backend running?';
+  };
+}
+
+function saveSettings(inputId) {
+  const url = document.getElementById(inputId)?.value?.trim();
+  if (!url) return;
+  wsUrl = url;
+  chrome.storage.local.set({ filament_ws_url: url }, () => {
+    showToast('Settings saved — reload page to apply');
+    // Sync both inputs
+    const wsInput = document.getElementById('fil-ws-input');
+    const settingsWs = document.getElementById('fil-settings-ws');
+    if (wsInput) wsInput.value = url;
+    if (settingsWs) settingsWs.value = url;
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ACTIVATION
+// ══════════════════════════════════════════════════════════════════════════════
+function activateFilament() {
+  showView('permissions');
+}
+
+async function startCapture() {
   setState('connecting');
-  setConnectionDot('connecting');
-  updateEmptyText('Starting screen capture...', 'Requesting permissions');
+  showView('timeline');
+
+  // Remove old empty state, show new connecting empty
+  const empty = document.getElementById('fil-empty');
+  if (empty) {
+    empty.querySelector('.fil-empty-text').textContent = 'Starting...';
+    empty.querySelector('.fil-empty-sub').textContent = 'Requesting screen and microphone access';
+  }
 
   try {
     await startScreenCapture();
-    updateEmptyText('Starting microphone...', 'Almost there');
     await startMicrophone();
     connectWebSocket();
     isActive = true;
     setState('listening');
-    setConnectionDot('connected');
-    updateEmptyText('Watching quietly...', "I\u2019ll speak when something catches my eye");
-    updateFooterVisibility();
-    updateStopButton();
+    const tab = document.getElementById('fil-edge-tab');
+    if (tab) tab.classList.add('active');
+
+    if (empty) {
+      empty.querySelector('.fil-empty-text').textContent = 'Watching quietly';
+      empty.querySelector('.fil-empty-sub').textContent = 'Filament will speak when it has something worth saying';
+    }
+    updateFooter();
     showToast('Watching your screen and listening', 'Filament Active');
   } catch (err) {
     console.error('[Filament] Activation error:', err);
     setState('error');
-    setConnectionDot('error');
-    updateEmptyText('Could not start Filament', err.message);
+    showView('onboarding');
+    const title = document.getElementById('fil-ob-title');
+    const sub = document.getElementById('fil-ob-sub');
+    if (title) { title.textContent = 'Permission denied'; title.style.color = 'rgba(255,111,97,0.8)'; }
+    if (sub) sub.innerHTML = 'Filament needs screen and microphone<br>access to work. Please try again.';
+    const area = document.getElementById('fil-ob-auth-area');
+    if (area) {
+      area.innerHTML = '<button class="btn-google" id="fil-retry-btn">Try Again</button>';
+      document.getElementById('fil-retry-btn').addEventListener('click', (e) => { e.stopPropagation(); activateFilament(); });
+    }
     addMessage('Activation failed: ' + err.message, 'error');
   }
 }
@@ -396,7 +791,7 @@ function deactivateFilament() {
     audioCtxIn = null;
   }
 
-  wsReconnectAttempts = MAX_RECONNECT_ATTEMPTS; // prevent auto-reconnect
+  wsReconnectAttempts = MAX_RECONNECT_ATTEMPTS;
   if (ws) {
     ws.close();
     ws = null;
@@ -405,25 +800,15 @@ function deactivateFilament() {
   isActive = false;
   isMuted = false;
   setState('idle');
-  setConnectionDot('hidden');
-  updateFooterVisibility();
-  updateStopButton();
-  updateMuteButton();
+  const tab = document.getElementById('fil-edge-tab');
+  if (tab && !isPanelOpen) tab.classList.remove('active');
+  updateFooter();
   showToast('Session ended', 'Stopped');
   addMessage('Session ended by user', 'system');
 }
 
-function updateEmptyText(main, sub) {
-  const el = document.getElementById('fil-empty');
-  if (!el) return;
-  const t = el.querySelector('.fil-empty-text');
-  const s = el.querySelector('.fil-empty-sub');
-  if (t) t.textContent = main;
-  if (s) s.textContent = sub;
-}
-
 // ══════════════════════════════════════════════════════════════════════════════
-// SCREEN CAPTURE
+// SCREEN CAPTURE (preserved from original)
 // ══════════════════════════════════════════════════════════════════════════════
 async function startScreenCapture() {
   screenStream = await navigator.mediaDevices.getDisplayMedia({
@@ -460,13 +845,11 @@ function sendFrame(video) {
     const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.7);
     const base64 = dataUrl.split(',')[1];
     ws.send(JSON.stringify({ type: 'frame', data: base64 }));
-  } catch (_) {
-    // Video not ready
-  }
+  } catch (_) {}
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// MICROPHONE
+// MICROPHONE (preserved from original)
 // ══════════════════════════════════════════════════════════════════════════════
 async function startMicrophone() {
   micStream = await navigator.mediaDevices.getUserMedia({
@@ -474,8 +857,6 @@ async function startMicrophone() {
   });
 
   audioCtxIn = new AudioContext({ sampleRate: AUDIO_SAMPLE_RATE });
-
-  // Load AudioWorklet processor from extension file (avoids CSP blob: issues on sites like Gmail)
   const workletUrl = chrome.runtime.getURL('worklet-processor.js');
   await audioCtxIn.audioWorklet.addModule(workletUrl);
 
@@ -511,7 +892,7 @@ function arrayBufferToBase64(buffer) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// AUDIO PLAYBACK (queued — chunks play sequentially, never overlap)
+// AUDIO PLAYBACK (preserved from original — queued, no overlap)
 // ══════════════════════════════════════════════════════════════════════════════
 let nextPlayTime = 0;
 let lastSourceNode = null;
@@ -522,7 +903,6 @@ function playAudioPCM(arrayBuffer) {
     nextPlayTime = 0;
   }
 
-  // Resume context if suspended (Chrome autoplay policy)
   if (audioCtxOut.state === 'suspended') audioCtxOut.resume();
 
   const int16 = new Int16Array(arrayBuffer);
@@ -535,16 +915,13 @@ function playAudioPCM(arrayBuffer) {
   src.buffer = audioBuf;
   src.connect(audioCtxOut.destination);
 
-  // Schedule this chunk right after the previous one ends
   const now = audioCtxOut.currentTime;
   const startTime = Math.max(now, nextPlayTime);
   src.start(startTime);
   nextPlayTime = startTime + audioBuf.duration;
 
-  // Track the last source so we can detect when all audio finishes
   lastSourceNode = src;
   src.onended = () => {
-    // Only go back to listening when THIS was the last chunk
     if (lastSourceNode === src && isActive && !isMuted) {
       setState('listening');
     }
@@ -552,12 +929,11 @@ function playAudioPCM(arrayBuffer) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// WEBSOCKET
+// WEBSOCKET (preserved from original with minor additions)
 // ══════════════════════════════════════════════════════════════════════════════
 async function connectWebSocket() {
   if (ws && ws.readyState === WebSocket.OPEN) return;
 
-  // Pre-fetch token BEFORE opening the socket so it can be sent as the very first message
   let pendingToken = null;
   try {
     pendingToken = await new Promise(resolve =>
@@ -570,18 +946,20 @@ async function connectWebSocket() {
 
   ws.onopen = () => {
     wsReconnectAttempts = 0;
-    setConnectionDot('connected');
     if (currentState === 'connecting' || currentState === 'error') setState('listening');
 
-    // Send token synchronously — guaranteed to be first message, no async race condition
     try {
       ws.send(JSON.stringify({ type: 'auth', token: pendingToken }));
-      console.log('[Filament] Auth token sent:', pendingToken ? 'yes (' + pendingToken.substring(0, 10) + '...)' : 'NONE');
+      console.log('[Filament] Auth token sent:', pendingToken ? 'yes' : 'NONE');
       if (!pendingToken) {
-        addMessage('Sign in to Google via the Filament extension popup first.', 'error');
+        addMessage('Sign in to Google first for Gmail/Drive access.', 'error');
+      }
+      // Token age check
+      if (tokenTimestamp && (Date.now() - tokenTimestamp) > 55 * 60 * 1000) {
+        addMessage('Your Google token may be expired. Re-authenticate in settings.', 'error');
       }
     } catch (e) {
-      console.warn('[Filament] Extension context invalidated — reload the page to reconnect.');
+      console.warn('[Filament] Extension context invalidated');
     }
   };
 
@@ -602,18 +980,16 @@ async function connectWebSocket() {
 
   ws.onerror = () => {
     console.error('[Filament] WebSocket error');
-    setConnectionDot('error');
   };
 
   ws.onclose = () => {
     if (isActive && wsReconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-      setConnectionDot('connecting');
       wsReconnectAttempts++;
       setTimeout(connectWebSocket, RECONNECT_DELAY_MS);
     } else if (isActive) {
       setState('error');
-      setConnectionDot('error');
       addMessage('Lost connection to backend', 'error');
+      updateFooter();
     }
   };
 }
@@ -623,29 +999,29 @@ async function connectWebSocket() {
 // ══════════════════════════════════════════════════════════════════════════════
 function toggleMute() {
   isMuted = !isMuted;
-  updateMuteButton();
   if (isMuted) {
     setState('muted');
   } else if (isActive) {
     setState('listening');
   }
-}
-
-function updateMuteButton() {
-  const btn = document.getElementById('fil-mute-btn');
-  if (!btn) return;
-  btn.innerHTML = isMuted ? `${ICON.micOff} Unmute` : `${ICON.mic} Mute`;
+  updateFooter();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
 // BACKGROUND MESSAGE LISTENER
 // ══════════════════════════════════════════════════════════════════════════════
 chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === 'toggle_panel') {
+    if (isPanelOpen) closePanel();
+    else { checkAuthStatus(); openPanel(); }
+    return;
+  }
+
   if (!isActive || !ws || ws.readyState !== WebSocket.OPEN) return;
 
   if (msg.type === 'morning_brief') {
     ws.send(JSON.stringify({ type: 'frame', data: '', context: 'morning_brief' }));
-    addMessage('Morning brief triggered', 'system');
+    addMessage('Morning brief triggered', 'system', 'morning_brief');
   }
 
   if (msg.type === 'intent_reader') {
@@ -655,23 +1031,26 @@ chrome.runtime.onMessage.addListener((msg) => {
       context: 'intent_reader',
       fromDoc: msg.fromDoc || '',
     }));
-    addMessage('Detected navigation from document to Gmail', 'system');
+    addMessage('Detected navigation from document to Gmail', 'system', 'intent');
   }
 });
 
-// ── Auto-send token when user signs in via popup ────────────────────────────
+// Auto-send token when user signs in
 chrome.storage.onChanged.addListener((changes) => {
   try {
     if (changes.filament_oauth_token && changes.filament_oauth_token.newValue) {
       const token = changes.filament_oauth_token.newValue;
+      isSignedIn = true;
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'auth', token }));
-        console.log('[Filament] Auth token updated from popup sign-in');
+        console.log('[Filament] Auth token updated');
       }
+      updateFooter();
     }
-  } catch (e) {
-    // Extension context invalidated — ignore
-  }
+    if (changes.filament_token_time && changes.filament_token_time.newValue) {
+      tokenTimestamp = changes.filament_token_time.newValue;
+    }
+  } catch (e) {}
 });
 
 // ══════════════════════════════════════════════════════════════════════════════

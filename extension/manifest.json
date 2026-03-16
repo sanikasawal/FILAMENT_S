@@ -22,10 +22,16 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["worklet-processor.js"],
+      "resources": ["worklet-processor.js", "logo-filament.svg", "logo-filament-vertical.svg"],
       "matches": ["<all_urls>"]
     }
   ],
+  "commands": {
+    "toggle-panel": {
+      "suggested_key": { "default": "Ctrl+Shift+F", "mac": "Command+Shift+F" },
+      "description": "Toggle Filament panel"
+    }
+  },
   "oauth2": {
     "client_id": "76839905027-9mruei1o58bfots328vsp8a8k5l1suik.apps.googleusercontent.com",
     "scopes": [
