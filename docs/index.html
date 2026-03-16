@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Filament — Ambient AI Workspace Co-Pilot</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0A0A0C;
+      --surface: rgba(14,14,16,0.92);
+      --border: rgba(255,255,255,0.06);
+      --text: rgba(255,255,255,0.9);
+      --muted: rgba(255,255,255,0.4);
+      --faint: rgba(255,255,255,0.1);
+      --teal: #00BFA5;
+      --blue: #4285F4;
+      --orange: #FF8A65;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── NOISE OVERLAY ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.4;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      padding: 20px 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      background: rgba(10,10,12,0.7);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+
+    .nav-logo { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+    .nav-logo-text { font-size: 15px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
+
+    .nav-links { display: flex; align-items: center; gap: 32px; }
+    .nav-links a {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--text); }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 20px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+      cursor: pointer;
+      border: none;
+    }
+    .btn-primary {
+      background: var(--text);
+      color: var(--bg);
+    }
+    .btn-primary:hover { background: rgba(255,255,255,0.85); transform: translateY(-1px); }
+    .btn-outline {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-outline:hover { border-color: rgba(255,255,255,0.2); background: var(--faint); }
+
+    /* ── HERO ── */
+    .hero {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 120px 24px 80px;
+      overflow: hidden;
+    }
+
+    .hero-glow {
+      position: absolute;
+      top: 30%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 700px;
+      height: 400px;
+      background: radial-gradient(ellipse, rgba(0,191,165,0.08) 0%, rgba(66,133,244,0.05) 50%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 100px;
+      border: 1px solid rgba(0,191,165,0.2);
+      background: rgba(0,191,165,0.05);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--teal);
+      margin-bottom: 36px;
+    }
+    .hero-badge-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: var(--teal);
+      animation: blink 2s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.2; }
+    }
+
+    .hero h1 {
+      font-size: clamp(48px, 7vw, 88px);
+      font-weight: 800;
+      line-height: 1.0;
+      letter-spacing: -0.03em;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, rgba(255,255,255,1) 0%, rgba(255,255,255,0.6) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-wave {
+      display: block;
+      margin: 0 auto 32px;
+    }
+
+    .hero-sub {
+      font-size: clamp(17px, 2.5vw, 22px);
+      font-weight: 400;
+      color: var(--muted);
+      max-width: 540px;
+      line-height: 1.6;
+      margin-bottom: 48px;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .hero-scroll {
+      position: absolute;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      color: var(--faint);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      animation: float 3s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateX(-50%) translateY(0); }
+      50% { transform: translateX(-50%) translateY(6px); }
+    }
+
+    /* ── SECTION ── */
+    section {
+      position: relative;
+      z-index: 1;
+      padding: 100px 24px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--teal);
+      margin-bottom: 16px;
+    }
+
+    .section-title {
+      font-size: clamp(28px, 4vw, 44px);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 16px;
+    }
+
+    .section-body {
+      font-size: 16px;
+      color: var(--muted);
+      line-height: 1.7;
+      max-width: 580px;
+    }
+
+    /* ── HOW IT WORKS ── */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 2px;
+      margin-top: 56px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      overflow: hidden;
+    }
+
+    .step {
+      padding: 32px 28px;
+      background: var(--surface);
+      position: relative;
+    }
+
+    .step-num {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      color: var(--faint);
+      margin-bottom: 20px;
+    }
+
+    .step-icon {
+      width: 36px; height: 36px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      margin-bottom: 16px;
+      border: 1px solid var(--border);
+    }
+
+    .step h3 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+
+    .step p {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    /* ── FEATURES ── */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
+      margin-top: 56px;
+    }
+
+    .feature-card {
+      padding: 28px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--surface);
+      transition: border-color 0.2s;
+    }
+
+    .feature-card:hover { border-color: rgba(255,255,255,0.12); }
+
+    .feature-icon {
+      font-size: 22px;
+      margin-bottom: 14px;
+    }
+
+    .feature-card h3 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .feature-card p {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    /* ── TECH STACK ── */
+    .tech-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 40px;
+    }
+
+    .tech-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 14px;
+      border-radius: 100px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+    }
+
+    .tech-pill-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+    }
+
+    /* ── DIVIDER ── */
+    .divider {
+      width: 100%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border) 20%, var(--border) 80%, transparent);
+      margin: 0 auto;
+    }
+
+    /* ── HACKATHON BADGE ── */
+    .hackathon-strip {
+      background: linear-gradient(135deg, rgba(66,133,244,0.06), rgba(0,191,165,0.06));
+      border: 1px solid rgba(66,133,244,0.15);
+      border-radius: 16px;
+      padding: 32px 36px;
+      margin-top: 56px;
+      display: flex;
+      align-items: flex-start;
+      gap: 20px;
+    }
+
+    .hackathon-strip-icon { font-size: 28px; flex-shrink: 0; }
+
+    .hackathon-strip h3 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .hackathon-strip p {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .hackathon-strip a { color: var(--teal); text-decoration: none; }
+    .hackathon-strip a:hover { text-decoration: underline; }
+
+    /* ── FOOTER ── */
+    footer {
+      position: relative;
+      z-index: 1;
+      border-top: 1px solid var(--border);
+      padding: 40px 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    footer p {
+      font-size: 12px;
+      color: var(--faint);
+    }
+
+    footer a {
+      font-size: 12px;
+      color: var(--muted);
+      text-decoration: none;
+    }
+
+    footer a:hover { color: var(--text); }
+
+    .footer-links { display: flex; gap: 24px; }
+
+    /* ── WAVE ANIMATION ── */
+    .wave-path {
+      stroke-dasharray: 400;
+      stroke-dashoffset: 400;
+      animation: draw 2s ease forwards;
+    }
+
+    @keyframes draw {
+      to { stroke-dashoffset: 0; }
+    }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 640px) {
+      nav { padding: 16px 20px; }
+      .nav-links { display: none; }
+      section { padding: 64px 20px; }
+      footer { padding: 32px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <a class="nav-logo" href="#">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 32" width="100" height="23">
+        <defs>
+          <linearGradient id="fil-grad-nav" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%"   stop-color="#4285F4"/>
+            <stop offset="28%"  stop-color="#00BFA5"/>
+            <stop offset="56%"  stop-color="#8BC34A"/>
+            <stop offset="100%" stop-color="#FF6F61"/>
+          </linearGradient>
+          <filter id="glow-nav">
+            <feGaussianBlur stdDeviation="1.5" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+        <path d="M 6,16 C 14,16 18,6 26,6 S 38,16 46,16 S 58,26 66,26 S 78,16 86,16 S 98,6 106,6 S 118,16 126,16 L 134,16"
+          fill="none" stroke="url(#fil-grad-nav)" stroke-width="2.2"
+          stroke-linecap="round" stroke-linejoin="round" filter="url(#glow-nav)" class="wave-path"/>
+      </svg>
+      <span class="nav-logo-text">Filament</span>
+    </a>
+    <div class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#tech">Tech</a>
+      <a href="https://github.com/Vishal2602/FILAMENT" target="_blank">GitHub</a>
+    </div>
+    <a class="btn btn-primary" href="https://github.com/Vishal2602/FILAMENT" target="_blank">
+      View on GitHub
+    </a>
+  </nav>
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="hero-glow"></div>
+
+    <div class="hero-badge">
+      <span class="hero-badge-dot"></span>
+      Live Agent · Build With AI NYC 2026
+    </div>
+
+    <svg class="hero-wave" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 46" width="200" height="46">
+      <defs>
+        <linearGradient id="fil-grad-hero" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%"   stop-color="#4285F4"/>
+          <stop offset="28%"  stop-color="#00BFA5"/>
+          <stop offset="56%"  stop-color="#8BC34A"/>
+          <stop offset="100%" stop-color="#FF6F61"/>
+        </linearGradient>
+        <filter id="glow-hero">
+          <feGaussianBlur stdDeviation="2.5" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <path d="M 8,23 C 20,23 26,8 38,8 S 56,23 66,23 S 84,38 96,38 S 114,23 124,23 S 142,8 154,8 S 172,23 184,23 L 194,23"
+        fill="none" stroke="url(#fil-grad-hero)" stroke-width="3"
+        stroke-linecap="round" stroke-linejoin="round" filter="url(#glow-hero)" class="wave-path"/>
+    </svg>
+
+    <h1>Filament</h1>
+
+    <p class="hero-sub">
+      A layer on top of Google Workspace that connects your apps, screen, and data — where Gemini alone can't reach.
+    </p>
+
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="https://github.com/Vishal2602/FILAMENT" target="_blank">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+        View on GitHub
+      </a>
+      <a class="btn btn-outline" href="#how">How it works</a>
+    </div>
+
+    <div class="hero-scroll">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+      Scroll
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- HOW IT WORKS -->
+  <section id="how">
+    <div class="section-label">How it works</div>
+    <h2 class="section-title">No prompt. No button.<br/>Just presence.</h2>
+    <p class="section-body">
+      Filament runs silently in your browser, watching your screen and listening to your voice. When it spots something actionable, it reaches into your Gmail and Drive and speaks — before you even think to ask.
+    </p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">01</div>
+        <div class="step-icon">👁</div>
+        <h3>Watches your screen</h3>
+        <p>Captures one frame every 3 seconds via <code>getDisplayMedia()</code> and streams it to the Gemini Live API in real time.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">02</div>
+        <div class="step-icon">🎙</div>
+        <h3>Listens to your voice</h3>
+        <p>Captures microphone audio as PCM Int16 at 16kHz via AudioWorklet and streams it bidirectionally — speak naturally, get voice back.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">03</div>
+        <div class="step-icon">🔍</div>
+        <h3>Searches your Workspace</h3>
+        <p>When Gemini spots something worth acting on, it calls <code>fetch_workspace_context</code> — querying your Gmail and Drive via OAuth 2.0.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">04</div>
+        <div class="step-icon">🔊</div>
+        <h3>Speaks the answer</h3>
+        <p>Synthesizes a short, relevant nudge and plays it back as audio — the specific name, date, or file you need, right when you need it.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <div class="section-label">Features</div>
+    <h2 class="section-title">Everything connected,<br/>nothing in your way.</h2>
+
+    <div class="features">
+      <div class="feature-card">
+        <div class="feature-icon">🌅</div>
+        <h3>Morning Brief</h3>
+        <p>Open a new tab before 11am and Filament greets you with a spoken summary of your unread emails and recent files — no prompting needed.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⚡</div>
+        <h3>Proactive Screen Analysis</h3>
+        <p>Working on a spreadsheet with empty cells? Filament notices and searches your inbox for the data that should be there.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔄</div>
+        <h3>Navigation Intent Reader</h3>
+        <p>Switch from a Google Doc to Gmail and Filament detects your intent — already searching for the right thread before you start typing.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">💬</div>
+        <h3>Voice Q&amp;A</h3>
+        <p>Ask anything: "What was the last email I sent?" or "Find the file about the API deadline." Filament searches and answers in voice.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔒</div>
+        <h3>Your Data, Your OAuth</h3>
+        <p>No data stored. The OAuth token lives only in your browser session and is used exclusively for real-time API calls on your behalf.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">☁️</div>
+        <h3>Fully Cloud-Native</h3>
+        <p>Backend deployed on Google Cloud Run with automated deployment scripts. Scales to zero when idle, up to 5 instances under load.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- TECH STACK -->
+  <section id="tech">
+    <div class="section-label">Tech Stack</div>
+    <h2 class="section-title">Built on Google's<br/>most capable APIs.</h2>
+    <p class="section-body">
+      Every layer is purpose-built for real-time, multimodal AI — from the AudioWorklet PCM pipeline to ADK's LiveRequestQueue bridging WebSocket audio into Gemini's bidirectional stream.
+    </p>
+
+    <div class="tech-grid">
+      <span class="tech-pill"><span class="tech-pill-dot" style="background:#4285F4"></span>Gemini Live API</span>
+      <span class="tech-pill"><span class="tech-pill-dot" style="background:#00BFA5"></span>Google ADK</span>
+      <span class="tech-pill"><span class="tech-pill-dot" style="background:#34A853"></span>Google GenAI SDK</span>
+      <span class="tech-pill"><span class="tech-pill-dot" style="background:#FF8A65"></span>Gmail API</span>
+      <span class="tech-pill"><span class="tech-pill-dot" style="background:#FFB74D"></span>Google Drive API</span>
+      <span class="tech-pill"><span class="tech-pill-dot" style="background:#8BC34A"></span>Google Cloud Run</span>
+      <span class="tech-pill"><span class="tech-pill-dot" style="background:#4285F4"></span>Cloud Build</span>
+      <span class="tech-pill"><span class="tech-pill-dot" style="background:#aaa"></span>FastAPI (Python 3.11)</span>
+      <span class="tech-pill"><span class="tech-pill-dot" style="background:#aaa"></span>Chrome Extension MV3</span>
+      <span class="tech-pill"><span class="tech-pill-dot" style="background:#aaa"></span>WebSocket</span>
+      <span class="tech-pill"><span class="tech-pill-dot" style="background:#aaa"></span>AudioWorklet</span>
+      <span class="tech-pill"><span class="tech-pill-dot" style="background:#aaa"></span>Web Audio API</span>
+      <span class="tech-pill"><span class="tech-pill-dot" style="background:#aaa"></span>OAuth 2.0</span>
+    </div>
+
+    <div class="hackathon-strip">
+      <div class="hackathon-strip-icon">🏆</div>
+      <div>
+        <h3>Built for the #GeminiLiveAgentChallenge</h3>
+        <p>
+          Filament was created for the purposes of entering the <strong>Build With AI NYC Hackathon 2026</strong> — Live Agents category. It uses the Gemini Live API (<code>gemini-2.5-flash-native-audio-latest</code>), Google ADK, and is hosted entirely on Google Cloud Run.
+          <br/><br/>
+          <a href="https://github.com/Vishal2602/FILAMENT" target="_blank">github.com/Vishal2602/FILAMENT</a> &nbsp;·&nbsp;
+          <a href="https://filament-orchestrator-sjs5thynia-uc.a.run.app" target="_blank">Live Backend ↗</a>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- FOOTER -->
+  <footer>
+    <div>
+      <p>Built by <strong>Vishal Sunil Kumar</strong> &amp; <strong>Sanika</strong> · Build With AI NYC 2026</p>
+    </div>
+    <div class="footer-links">
+      <a href="https://github.com/Vishal2602/FILAMENT" target="_blank">GitHub</a>
+      <a href="https://filament-orchestrator-sjs5thynia-uc.a.run.app" target="_blank">Backend</a>
+    </div>
+  </footer>
+
+</body>
+</html>
