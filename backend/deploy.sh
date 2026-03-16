@@ -101,7 +101,7 @@ for SERVICE_NAME in "${DEPLOY_LIST[@]}"; do
   # Orchestrator needs agent service URLs (set after first deploy, then redeploy)
   if [ "$SERVICE_TARGET" = "orchestrator" ]; then
     DEPLOY_ARGS+=(
-      --set-env-vars="AGENT_MODE=remote"
+      --set-env-vars="AGENT_MODE=local"
       --set-env-vars="SCREEN_ANALYST_URL=${SCREEN_ANALYST_URL:-}"
       --set-env-vars="WORKSPACE_AGENT_URL=${WORKSPACE_AGENT_URL:-}"
       --set-env-vars="NUDGE_COMPOSER_URL=${NUDGE_COMPOSER_URL:-}"
