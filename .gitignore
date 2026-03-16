@@ -8,6 +8,7 @@ backend/.env
 *.docx
 *.html
 !docs/index.html
+!docs/privacy.html
 HANDOFF.md
 
 # ── Reference repos (cloned for patterns, not our code) ──
