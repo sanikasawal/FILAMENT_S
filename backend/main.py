@@ -1,7 +1,7 @@
 """Filament Backend — Orchestrator Service
 
 Supports two modes controlled by AGENT_MODE env var:
-  - "local"  (default): Uses raw Gemini Live API (bidiGenerateContent) directly.
+  - "local"  (default): Uses ADK Runner with Gemini Live API (bidiGenerateContent).
   - "remote": Agents run on separate Cloud Run instances; orchestrator calls via HTTP.
 
 The WebSocket endpoint remains the same either way — the extension doesn't know
@@ -13,6 +13,7 @@ import base64
 import json
 import logging
 import os
+import re
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -20,60 +21,27 @@ load_dotenv()
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from google import genai
 from google.genai import types
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.adk.agents.live_request_queue import LiveRequestQueue
+from google.adk.agents.run_config import RunConfig, StreamingMode
+
+from agents.live_agent import live_agent
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 AGENT_MODE = os.environ.get("AGENT_MODE", "local")
 
-# ── Gemini client (used by local mode) ──
-genai_client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
-
-# ── Workspace tool for manual invocation ──
-from tools import fetch_workspace_context
-from agents.live_agent import LIVE_AGENT_PROMPT
-
-LIVE_MODEL = "gemini-2.5-flash-native-audio-latest"
-
-# Function declaration for the Gemini Live API tool calling
-WORKSPACE_TOOL_DECL = types.Tool(
-    function_declarations=[
-        types.FunctionDeclaration(
-            name="fetch_workspace_context",
-            description=(
-                "Search the user's Gmail and/or Google Drive. "
-                "Use Gmail search operators in the query for precision: "
-                "'in:sent' for sent emails, 'in:inbox' for received, "
-                "'from:name' to filter by sender, 'to:name' for recipient, "
-                "'newer_than:7d' for recent emails, 'subject:keyword' for subject search. "
-                "Set source to 'gmail' for email only, 'drive' for files only, or 'both'."
-            ),
-            parameters=types.Schema(
-                type="OBJECT",
-                properties={
-                    "query": types.Schema(
-                        type="STRING",
-                        description="Search query. Use Gmail operators for email (e.g. 'in:sent newer_than:1d', 'from:name subject:topic'). For Drive, use keywords.",
-                    ),
-                    "source": types.Schema(
-                        type="STRING",
-                        description="Where to search: 'gmail', 'drive', or 'both'. Default is 'both'.",
-                    ),
-                },
-                required=["query"],
-            ),
-        ),
-    ],
+# ── ADK Runner (used by local mode) ──
+adk_session_service = InMemorySessionService()
+adk_runner = Runner(
+    agent=live_agent,
+    app_name="filament",
+    session_service=adk_session_service,
 )
-
-
-class _ToolContext:
-    """Minimal context object to pass OAuth token to fetch_workspace_context."""
-    def __init__(self, oauth_token):
-        self.state = {"oauth_token": oauth_token}
-
+logger.info(f"ADK Runner ready: agent={live_agent.name}, model={live_agent.model}")
 
 # ── Remote mode URLs ──
 if AGENT_MODE == "remote":
@@ -85,7 +53,7 @@ if AGENT_MODE == "remote":
         f"workspace={WORKSPACE_AGENT_URL}, nudge={NUDGE_COMPOSER_URL}"
     )
 else:
-    logger.info("Local mode: raw Gemini Live API (bypassing ADK)")
+    logger.info("Local mode: ADK Runner + Gemini Live API")
 
 
 app = FastAPI(title="Filament Backend")
@@ -103,7 +71,8 @@ async def health():
     return {
         "status": "Filament backend running",
         "mode": AGENT_MODE,
-        "model": LIVE_MODEL,
+        "agent": live_agent.name,
+        "model": live_agent.model,
     }
 
 
@@ -199,14 +168,14 @@ async def _remote_pipeline(frame_b64: str, session_id: str, websocket: WebSocket
         logger.error(f"Remote pipeline error: {e}")
 
 
-# ── WebSocket endpoint (same interface for both modes) ──
+# ── WebSocket endpoint ──
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     logger.info(f"WebSocket accepted (mode={AGENT_MODE})")
 
-    # Wait for auth token before doing anything — guaranteed no race condition
+    # Wait for auth token before doing anything
     token_holder = {"token": None}
     try:
         auth_msg = await asyncio.wait_for(websocket.receive_text(), timeout=10.0)
@@ -251,7 +220,6 @@ async def _remote_ws_handler(websocket: WebSocket, session_id: str, token_holder
                     )
 
                 elif msg_type == "audio":
-                    audio_b64 = data.get("data", "")
                     await websocket.send_text(json.dumps({
                         "type": "status",
                         "content": "audio_received",
@@ -263,251 +231,222 @@ async def _remote_ws_handler(websocket: WebSocket, session_id: str, token_holder
         logger.error(f"Remote WS error: {e}")
 
 
-async def _local_ws_handler(websocket: WebSocket, session_id: str, token_holder: dict):
-    """Handle WebSocket in local mode — direct Gemini Live API (no ADK).
+def _clean_text(text: str) -> str | None:
+    """Strip markdown formatting, return None if empty."""
+    t = text.strip()
+    if not t:
+        return None
+    t = re.sub(r'\*\*([^*]+)\*\*', r'\1', t)
+    return t.strip() or None
 
-    Restarts the Gemini Live session automatically when it closes, keeping
+
+async def _local_ws_handler(websocket: WebSocket, session_id: str, token_holder: dict):
+    """Handle WebSocket in local mode — ADK Runner with Gemini Live API.
+
+    ADK manages the Gemini Live session and automatically handles tool calls
+    (fetch_workspace_context). OAuth token is stored in ADK session state so
+    the tool can access it via tool_context.state["oauth_token"].
+
+    Restarts the ADK session automatically when Gemini closes it, keeping
     the user's WebSocket connection alive for multi-turn conversations.
     """
-    config = types.LiveConnectConfig(
+    run_config = RunConfig(
         response_modalities=["AUDIO"],
-        system_instruction=types.Content(
-            parts=[types.Part(text=LIVE_AGENT_PROMPT)]
-        ),
-        tools=[WORKSPACE_TOOL_DECL],
+        streaming_mode=StreamingMode.BIDI,
     )
 
-    gemini_session_num = 0
-    while True:
-        gemini_session_num += 1
-        logger.info(f"Starting Gemini Live session #{gemini_session_num} (ws={session_id})")
-        user_disconnected = False
+    # Create ADK session — OAuth token lives in session state
+    try:
+        await adk_session_service.create_session(
+            app_name="filament",
+            user_id="user",
+            session_id=session_id,
+            state={"oauth_token": token_holder["token"] or ""},
+        )
+        logger.info(f"ADK session created: {session_id}")
+    except Exception:
+        # Session already exists (e.g. reconnect) — update token
+        session = await adk_session_service.get_session(
+            app_name="filament", user_id="user", session_id=session_id
+        )
+        if session:
+            session.state["oauth_token"] = token_holder["token"] or ""
 
-        try:
-            async with genai_client.aio.live.connect(
-                model=LIVE_MODEL,
-                config=config,
-            ) as live_session:
-                logger.info(f"Gemini Live session #{gemini_session_num} connected")
+    user_disconnected = False
+    session_num = 0
 
-            async def ws_to_gemini():
-                """Forward frames and audio from WebSocket to Gemini Live session."""
-                frame_count = 0
-                audio_count = 0
-                try:
-                    while True:
-                        message = await websocket.receive()
+    while not user_disconnected:
+        session_num += 1
+        logger.info(f"Starting ADK Live session #{session_num} (ws={session_id})")
 
-                        if "text" in message:
-                            data = json.loads(message["text"])
-                            msg_type = data.get("type")
+        live_request_queue = LiveRequestQueue()
 
-                            # Accept auth token at any time
-                            if msg_type == "auth":
-                                token_holder["token"] = data.get("token")
-                                logger.info(f"Auth token updated: {'yes' if token_holder['token'] else 'none'}")
-                                continue
+        async def upstream(queue: LiveRequestQueue):
+            nonlocal user_disconnected
+            frame_count = 0
+            audio_count = 0
+            try:
+                while True:
+                    message = await websocket.receive()
 
-                            if msg_type == "frame":
-                                context = data.get("context", "")
-                                frame_data = data.get("data", "")
+                    if "text" in message:
+                        data = json.loads(message["text"])
+                        msg_type = data.get("type")
 
-                                # Special context triggers from background.js
-                                if context == "morning_brief":
-                                    await live_session.send_client_content(
-                                        turns=types.Content(
-                                            role="user",
-                                            parts=[types.Part(text="The user just opened a new tab in the morning. Give them a brief summary of what's in their inbox and recent files. Call fetch_workspace_context first.")],
-                                        ),
-                                        turn_complete=True,
-                                    )
-                                    logger.info("Morning brief trigger sent")
-                                elif context == "intent_reader":
-                                    from_doc = data.get("fromDoc", "")
-                                    await live_session.send_client_content(
-                                        turns=types.Content(
-                                            role="user",
-                                            parts=[types.Part(text=f"The user just navigated from {from_doc} to Gmail. They likely want to compose an email about that document. Call fetch_workspace_context to find relevant context.")],
-                                        ),
-                                        turn_complete=True,
-                                    )
-                                    logger.info(f"Intent reader trigger sent (from={from_doc})")
-                                elif frame_data:
-                                    frame_count += 1
-                                    blob = types.Blob(
-                                        mime_type="image/jpeg",
-                                        data=base64.b64decode(frame_data),
-                                    )
-                                    await live_session.send_realtime_input(media=blob)
-                                    if frame_count <= 5 or frame_count % 10 == 0:
-                                        logger.info(f"Frame #{frame_count} sent to Gemini ({len(frame_data)} chars)")
-
-                                    # Every 3rd frame (~9s), send a text nudge to trigger proactive analysis
-                                    # Only if we have an OAuth token — avoids "No OAuth token" spam on first connect
-                                    if frame_count % 3 == 0 and token_holder["token"]:
-                                        await live_session.send_client_content(
-                                            turns=types.Content(
-                                                role="user",
-                                                parts=[types.Part(text="Look at the screen carefully. If you see something genuinely actionable (empty fields, documents being edited, forms with missing data), call fetch_workspace_context with a query based on what you see. If the screen shows nothing actionable (a homepage, search engine, blank page), stay silent — do not speak.")],
-                                            ),
-                                            turn_complete=True,
-                                        )
-                                        logger.info(f"Proactive analysis prompt sent after frame #{frame_count}")
-
-                            elif msg_type == "audio":
-                                audio_data = data.get("data", "")
-                                if audio_data:
-                                    audio_count += 1
-                                    blob = types.Blob(
-                                        mime_type="audio/pcm;rate=16000",
-                                        data=base64.b64decode(audio_data),
-                                    )
-                                    await live_session.send_realtime_input(audio=blob)
-                                    if audio_count <= 3 or audio_count % 50 == 0:
-                                        logger.info(f"Audio #{audio_count} sent to Gemini ({len(audio_data)} chars)")
-
-                        elif "bytes" in message:
-                            blob = types.Blob(
-                                mime_type="audio/pcm;rate=16000",
-                                data=message["bytes"],
+                        # Accept auth token updates at any time
+                        if msg_type == "auth":
+                            token_holder["token"] = data.get("token")
+                            session = await adk_session_service.get_session(
+                                app_name="filament", user_id="user", session_id=session_id
                             )
-                            await live_session.send_realtime_input(audio=blob)
+                            if session:
+                                session.state["oauth_token"] = token_holder["token"] or ""
+                            logger.info(f"Auth token updated: {'yes' if token_holder['token'] else 'none'}")
+                            continue
 
-                except WebSocketDisconnect:
-                    logger.info(f"Client disconnected (sent {frame_count} frames, {audio_count} audio)")
-                    user_disconnected = True
-                except Exception as e:
-                    logger.error(f"ws_to_gemini error: {e}", exc_info=True)
+                        if msg_type == "frame":
+                            context = data.get("context", "")
+                            frame_data = data.get("data", "")
 
-            def _clean_text(text: str) -> str | None:
-                """Clean up model text: strip markdown, return None if pure noise."""
-                t = text.strip()
-                if not t:
-                    return None
-                # Strip markdown bold markers
-                import re
-                t = re.sub(r'\*\*([^*]+)\*\*', r'\1', t)
-                t = t.strip()
-                if not t:
-                    return None
-                return t
+                            if context == "morning_brief":
+                                queue.send_content(types.Content(
+                                    role="user",
+                                    parts=[types.Part(text="The user just opened a new tab in the morning. Give them a brief summary of what's in their inbox and recent files. Call fetch_workspace_context first.")],
+                                ))
+                                logger.info("Morning brief trigger sent")
 
-            async def gemini_to_ws():
-                """Forward Gemini Live responses to WebSocket, handle tool calls."""
-                logger.info("gemini_to_ws: starting receive loop")
-                response_count = 0
-                text_buffer = []  # Accumulate text fragments per turn
-                try:
-                    async for response in live_session.receive():
-                        response_count += 1
-                        if response_count <= 5:
-                            logger.info(f"Gemini response #{response_count}: "
-                                       f"has_content={response.server_content is not None}, "
-                                       f"has_tool_call={response.tool_call is not None}")
-                        # Model output: audio and/or text
-                        if response.server_content:
-                            model_turn = response.server_content.model_turn
-                            if model_turn and model_turn.parts:
-                                for part in model_turn.parts:
-                                    # Skip internal thinking/reasoning parts (Gemini 2.5 thinking feature)
-                                    if getattr(part, 'thought', False):
-                                        continue
-                                    if part.inline_data and part.inline_data.mime_type.startswith("audio/"):
-                                        await websocket.send_bytes(part.inline_data.data)
-                                    elif part.text:
-                                        text_buffer.append(part.text)
+                            elif context == "intent_reader":
+                                from_doc = data.get("fromDoc", "")
+                                queue.send_content(types.Content(
+                                    role="user",
+                                    parts=[types.Part(text=f"The user just navigated from {from_doc} to Gmail. They likely want to compose an email about that document. Call fetch_workspace_context to find relevant context.")],
+                                ))
+                                logger.info(f"Intent reader trigger sent (from={from_doc})")
 
-                            # turn_complete = model is done speaking this turn
-                            if response.server_content.turn_complete:
-                                full_text = "".join(text_buffer).strip()
-                                text_buffer.clear()
-                                cleaned = _clean_text(full_text)
-                                if cleaned:
-                                    logger.info(f"Agent text: {cleaned[:100]}")
-                                    await websocket.send_text(json.dumps({
-                                        "type": "text",
-                                        "content": cleaned,
-                                    }))
-                                elif full_text:
-                                    logger.debug(f"Filtered text: {full_text[:80]}...")
-
-                        # Tool calls: execute fetch_workspace_context and return results
-                        if response.tool_call:
-                            fn_responses = []
-                            for fc in response.tool_call.function_calls:
-                                logger.info(f"TOOL CALL: {fc.name}({fc.args})")
-                                if fc.name == "fetch_workspace_context":
-                                    query = fc.args.get("query", "")
-                                    source = fc.args.get("source", "both")
-                                    # Tell the user what's happening
-                                    source_label = "email" if source == "gmail" else "Drive" if source == "drive" else "email and Drive"
-                                    await websocket.send_text(json.dumps({
-                                        "type": "text",
-                                        "content": f"Searching your {source_label} for: \"{query}\"...",
-                                    }))
-                                    ctx = _ToolContext(token_holder["token"])
-                                    result = fetch_workspace_context(query, source=source, tool_context=ctx)
-                                    n_emails = len(result.get('emails', []))
-                                    n_files = len(result.get('files', []))
-                                    logger.info(
-                                        f"Tool result: source={result.get('source')}, "
-                                        f"emails={n_emails}, files={n_files}"
-                                    )
-                                    # Brief status — Gemini will synthesize the actual answer
-                                    if result.get("source") == "live" and (n_emails or n_files):
-                                        await websocket.send_text(json.dumps({
-                                            "type": "text",
-                                            "content": f"Found {n_emails} email(s) and {n_files} file(s). Processing...",
-                                        }))
-                                    elif result.get("source") == "no_token":
-                                        await websocket.send_text(json.dumps({
-                                            "type": "text",
-                                            "content": "Not signed in to Google — open the Filament popup and sign in first.",
-                                        }))
-                                    elif result.get("source") == "no_results":
-                                        pass  # No results is normal — let Gemini say so naturally
-                                    fn_responses.append(types.FunctionResponse(
-                                        id=fc.id,
-                                        name=fc.name,
-                                        response=result,
-                                    ))
-                                else:
-                                    logger.warning(f"Unknown tool call: {fc.name}")
-                                    fn_responses.append(types.FunctionResponse(
-                                        id=fc.id,
-                                        name=fc.name,
-                                        response={"error": f"Unknown tool: {fc.name}"},
-                                    ))
-
-                            if fn_responses:
-                                await live_session.send_tool_response(
-                                    function_responses=fn_responses,
+                            elif frame_data:
+                                frame_count += 1
+                                blob = types.Blob(
+                                    mime_type="image/jpeg",
+                                    data=base64.b64decode(frame_data),
                                 )
+                                queue.send_realtime(blob)
+                                if frame_count <= 5 or frame_count % 10 == 0:
+                                    logger.info(f"Frame #{frame_count} sent ({len(frame_data)} chars)")
 
-                except Exception as e:
-                    logger.error(f"gemini_to_ws error: {e}")
+                                # Every 3rd frame (~9s), nudge Gemini to do proactive analysis
+                                if frame_count % 3 == 0 and token_holder["token"]:
+                                    queue.send_content(types.Content(
+                                        role="user",
+                                        parts=[types.Part(text="Look at the screen carefully. If you see something genuinely actionable (empty fields, documents being edited, forms with missing data), call fetch_workspace_context with a query based on what you see. If the screen shows nothing actionable (a homepage, search engine, blank page), stay silent — do not speak.")],
+                                    ))
+                                    logger.info(f"Proactive analysis prompt sent after frame #{frame_count}")
 
-            tasks = [
-                asyncio.create_task(ws_to_gemini()),
-                asyncio.create_task(gemini_to_ws()),
-            ]
-            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-            for task in pending:
-                task.cancel()
-                try:
-                    await task
-                except (asyncio.CancelledError, Exception):
-                    pass
+                        elif msg_type == "audio":
+                            audio_data = data.get("data", "")
+                            if audio_data:
+                                audio_count += 1
+                                blob = types.Blob(
+                                    mime_type="audio/pcm;rate=16000",
+                                    data=base64.b64decode(audio_data),
+                                )
+                                queue.send_realtime(blob)
+                                if audio_count <= 3 or audio_count % 50 == 0:
+                                    logger.info(f"Audio #{audio_count} sent ({len(audio_data)} chars)")
 
-        except Exception as e:
-            logger.error(f"Gemini Live session #{gemini_session_num} error: {e}", exc_info=True)
+                    elif "bytes" in message:
+                        blob = types.Blob(
+                            mime_type="audio/pcm;rate=16000",
+                            data=message["bytes"],
+                        )
+                        queue.send_realtime(blob)
+
+            except WebSocketDisconnect:
+                logger.info("Client disconnected")
+                user_disconnected = True
+            except Exception as e:
+                logger.error(f"upstream error: {e}", exc_info=True)
+            finally:
+                queue.close()
+
+        async def downstream(queue: LiveRequestQueue):
+            """Receive ADK events and forward to WebSocket.
+
+            ADK automatically executes fetch_workspace_context tool calls using
+            the OAuth token stored in session state. We intercept function_call
+            events only to send a status message to the user.
+            """
+            text_buffer = []
+            response_count = 0
+            try:
+                async for event in adk_runner.run_live(
+                    user_id="user",
+                    session_id=session_id,
+                    live_request_queue=queue,
+                    run_config=run_config,
+                ):
+                    response_count += 1
+
+                    # Audio and text parts
+                    if event.content and event.content.parts:
+                        for part in event.content.parts:
+                            if getattr(part, 'thought', False):
+                                continue
+                            if part.inline_data and part.inline_data.mime_type.startswith("audio/"):
+                                await websocket.send_bytes(part.inline_data.data)
+                            elif part.text:
+                                text_buffer.append(part.text)
+
+                    # Flush text when model finishes its turn
+                    if getattr(event, 'turn_complete', False):
+                        full_text = "".join(text_buffer).strip()
+                        text_buffer.clear()
+                        cleaned = _clean_text(full_text)
+                        if cleaned:
+                            logger.info(f"Agent text: {cleaned[:100]}")
+                            await websocket.send_text(json.dumps({
+                                "type": "text",
+                                "content": cleaned,
+                            }))
+
+                    # Tool call status message (ADK handles actual execution automatically)
+                    if hasattr(event, 'get_function_calls'):
+                        for fc in event.get_function_calls():
+                            if fc.name == "fetch_workspace_context":
+                                source = fc.args.get("source", "both")
+                                query = fc.args.get("query", "")
+                                source_label = (
+                                    "email" if source == "gmail"
+                                    else "Drive" if source == "drive"
+                                    else "email and Drive"
+                                )
+                                await websocket.send_text(json.dumps({
+                                    "type": "text",
+                                    "content": f"Searching your {source_label} for: \"{query}\"...",
+                                }))
+                                logger.info(f"TOOL CALL: fetch_workspace_context(query={query!r}, source={source})")
+
+            except Exception as e:
+                logger.error(f"downstream error: {e}", exc_info=True)
+
+        upstream_task = asyncio.create_task(upstream(live_request_queue))
+        downstream_task = asyncio.create_task(downstream(live_request_queue))
+
+        done, pending = await asyncio.wait(
+            [upstream_task, downstream_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
 
         if user_disconnected:
             logger.info(f"User disconnected — ending WebSocket session (ws={session_id})")
             break
 
-        # Gemini session closed on its own — restart it
-        logger.info(f"Gemini session #{gemini_session_num} ended — restarting in 1s...")
+        logger.info(f"ADK session #{session_num} ended — restarting in 1s...")
         await asyncio.sleep(1)
 
     logger.info(f"WebSocket session ended (session={session_id})")
