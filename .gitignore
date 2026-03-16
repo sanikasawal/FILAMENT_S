@@ -8,7 +8,6 @@ backend/.env
 *.docx
 *.html
 HANDOFF.md
-CLAUDE.md
 
 # ── Reference repos (cloned for patterns, not our code) ──
 adk-python/
