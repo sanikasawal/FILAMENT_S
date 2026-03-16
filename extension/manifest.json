@@ -16,9 +16,19 @@
       "run_at": "document_end"
     }
   ],
+  "icons": {
+    "16": "icon-16.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Filament"
+    "default_title": "Filament",
+    "default_icon": {
+      "16": "icon-16.png",
+      "48": "icon-48.png",
+      "128": "icon-128.png"
+    }
   },
   "web_accessible_resources": [
     {
@@ -33,7 +43,7 @@
     }
   },
   "oauth2": {
-    "client_id": "76839905027-9mruei1o58bfots328vsp8a8k5l1suik.apps.googleusercontent.com",
+    "client_id": "70034740406-jkmhhvp0k2ss3i974rfrn16hj8t6rmre.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/gmail.readonly",
       "https://www.googleapis.com/auth/drive.readonly"

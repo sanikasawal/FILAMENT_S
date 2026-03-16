@@ -8,9 +8,9 @@
 /* ── Tokens ─────────────────────────────────────────────────────────────── */
 #filament-root {
   /* Surfaces — Apple-style frosted glass */
-  --fil-bg-surface: rgba(28, 28, 30, 0.72);
+  --fil-bg-surface: rgba(30, 30, 32, 0.45);
   --fil-bg-solid: #0A0A0C;
-  --fil-bg-elevated: rgba(44, 44, 46, 0.5);
+  --fil-bg-elevated: rgba(255, 255, 255, 0.06);
 
   /* Borders — subtle inner light for glass edge */
   --fil-border: rgba(255, 255, 255, 0.08);
