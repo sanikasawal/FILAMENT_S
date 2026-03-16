@@ -7,6 +7,7 @@ backend/.env
 # ── Documents (hackathon planning docs — not for repo) ──
 *.docx
 *.html
+!docs/index.html
 HANDOFF.md
 
 # ── Reference repos (cloned for patterns, not our code) ──
