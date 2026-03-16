@@ -43,16 +43,23 @@ WORKSPACE_TOOL_DECL = types.Tool(
         types.FunctionDeclaration(
             name="fetch_workspace_context",
             description=(
-                "Fetch relevant Gmail and Drive context for the given query. "
-                "Searches the user's Gmail messages and Google Drive files. "
-                "ALWAYS call this before speaking to ground your response in real data."
+                "Search the user's Gmail and/or Google Drive. "
+                "Use Gmail search operators in the query for precision: "
+                "'in:sent' for sent emails, 'in:inbox' for received, "
+                "'from:name' to filter by sender, 'to:name' for recipient, "
+                "'newer_than:7d' for recent emails, 'subject:keyword' for subject search. "
+                "Set source to 'gmail' for email only, 'drive' for files only, or 'both'."
             ),
             parameters=types.Schema(
                 type="OBJECT",
                 properties={
                     "query": types.Schema(
                         type="STRING",
-                        description="Search query for Gmail and Drive (e.g. 'invoice tax rate NYC')",
+                        description="Search query. Use Gmail operators for email (e.g. 'in:sent newer_than:1d', 'from:name subject:topic'). For Drive, use keywords.",
+                    ),
+                    "source": types.Schema(
+                        type="STRING",
+                        description="Where to search: 'gmail', 'drive', or 'both'. Default is 'both'.",
                     ),
                 },
                 required=["query"],
@@ -329,7 +336,7 @@ async def _local_ws_handler(websocket: WebSocket, session_id: str, token_holder:
                                         await live_session.send_client_content(
                                             turns=types.Content(
                                                 role="user",
-                                                parts=[types.Part(text="Check the screen. If you see something actionable, call fetch_workspace_context and give me the answer in 1-2 sentences. Don't narrate — just deliver the key fact.")],
+                                                parts=[types.Part(text="Look at the screen carefully. If you see something genuinely actionable (empty fields, documents being edited, forms with missing data), call fetch_workspace_context with a query based on what you see. If the screen shows nothing actionable (a homepage, search engine, blank page), stay silent — do not speak.")],
                                             ),
                                             turn_complete=True,
                                         )
@@ -415,13 +422,15 @@ async def _local_ws_handler(websocket: WebSocket, session_id: str, token_holder:
                                 logger.info(f"TOOL CALL: {fc.name}({fc.args})")
                                 if fc.name == "fetch_workspace_context":
                                     query = fc.args.get("query", "")
+                                    source = fc.args.get("source", "both")
                                     # Tell the user what's happening
+                                    source_label = "email" if source == "gmail" else "Drive" if source == "drive" else "email and Drive"
                                     await websocket.send_text(json.dumps({
                                         "type": "text",
-                                        "content": f"Searching your email and Drive for: \"{query}\"...",
+                                        "content": f"Searching your {source_label} for: \"{query}\"...",
                                     }))
                                     ctx = _ToolContext(token_holder["token"])
-                                    result = fetch_workspace_context(query, tool_context=ctx)
+                                    result = fetch_workspace_context(query, source=source, tool_context=ctx)
                                     n_emails = len(result.get('emails', []))
                                     n_files = len(result.get('files', []))
                                     logger.info(

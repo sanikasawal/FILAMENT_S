@@ -75,7 +75,6 @@ for SERVICE_NAME in "${DEPLOY_LIST[@]}"; do
   gcloud builds submit . \
     --project="${PROJECT}" \
     --tag="${IMAGE}" \
-    --build-arg="SERVICE_TARGET=${SERVICE_TARGET}" \
     --timeout=600
 
   echo "━━━ Deploying ${SERVICE_NAME} to Cloud Run ━━━"
@@ -97,7 +96,6 @@ for SERVICE_NAME in "${DEPLOY_LIST[@]}"; do
     --set-env-vars="GOOGLE_API_KEY=${GOOGLE_API_KEY:-}"
     --set-env-vars="GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}"
     --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT}"
-    --set-env-vars="PORT=8080"
   )
 
   # Orchestrator needs agent service URLs (set after first deploy, then redeploy)

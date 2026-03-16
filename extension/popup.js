@@ -13,12 +13,12 @@ const authStatusText = document.getElementById('auth-status-text');
 
 // ── Load saved settings ──────────────────────────────────────────────────────
 chrome.storage.local.get(['filament_ws_url', 'filament_oauth_token'], (result) => {
-  wsUrlInput.value = result.filament_ws_url || 'ws://localhost:8080/ws';
+  wsUrlInput.value = result.filament_ws_url || 'wss://filament-orchestrator-sjs5thynia-uc.a.run.app/ws';
   updateAuthUI(result.filament_oauth_token);
 });
 
 // ── OAuth Config ─────────────────────────────────────────────────────────────
-const OAUTH_CLIENT_ID = '70034740406-jkmhhvp0k2ss3i974rfrn16hj8t6rmre.apps.googleusercontent.com';
+const OAUTH_CLIENT_ID = '76839905027-9mruei1o58bfots328vsp8a8k5l1suik.apps.googleusercontent.com';
 const OAUTH_SCOPES = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.readonly';
 
 // ── Google Sign In (runs directly in popup — real user gesture context) ──────

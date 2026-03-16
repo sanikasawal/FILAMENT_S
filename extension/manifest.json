@@ -1,6 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Filament",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1jZ+FNmOKTdAhfd9msbh30pT5I8Un50sgk6pyIsym8GfE80EZTH1eK7JDJCqCLeq5dLQ0Up8Gyk2206164EOrN129gdAx0kj3f1ShuFDPlBoUb13QXfCCbOgLY+CkMobuPwGFyXgfaCmyC1cu8dbLGUt4eK1SRqTzHT4Aav9KdFNFVmA7Fd6vr3X6Mk0Z5x7YrvNZF5tvLfT+qSfRLb2jMcp3PfEZigAufT2G5/mSE91KEshFab0f/gPIxwg9H5mCdMcIUJIoVpUOgcHoXZO7clrW1qgZOAoF20KgOo/lR0WtLHyRCDtXV/MeHfyn1PR8yy+YBMES3XpOJ+9YBrs+wIDAQAB",
   "version": "1.0.0",
   "description": "Ambient AI workspace co-pilot powered by Gemini Live API",
   "permissions": ["tabs", "storage", "activeTab", "scripting", "identity"],
@@ -21,7 +22,7 @@
     "default_title": "Filament"
   },
   "oauth2": {
-    "client_id": "70034740406-jkmhhvp0k2ss3i974rfrn16hj8t6rmre.apps.googleusercontent.com",
+    "client_id": "76839905027-9mruei1o58bfots328vsp8a8k5l1suik.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/gmail.readonly",
       "https://www.googleapis.com/auth/drive.readonly"

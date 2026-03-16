@@ -111,11 +111,15 @@ def _search_drive(service, query: str, max_results: int = 3) -> list[dict]:
     return results
 
 
-def fetch_workspace_context(query: str, tool_context=None) -> dict:
+def fetch_workspace_context(query: str, source: str = "both", tool_context=None) -> dict:
     """Fetch relevant Gmail and Drive context for the given query.
 
     Uses the user's OAuth token from the session state to make authenticated
     API calls. Returns empty results if the token is missing or APIs fail.
+
+    Args:
+        query: Search query (supports Gmail search operators like 'in:sent', 'from:name')
+        source: Where to search - 'gmail', 'drive', or 'both' (default)
     """
     # Try to get the OAuth token from session state
     oauth_token = None
@@ -129,8 +133,11 @@ def fetch_workspace_context(query: str, tool_context=None) -> dict:
     gmail_svc = _build_gmail_service(oauth_token)
     drive_svc = _build_drive_service(oauth_token)
 
-    emails = _search_gmail(gmail_svc, query) if gmail_svc else []
-    files = _search_drive(drive_svc, query) if drive_svc else []
+    search_gmail = source in ("gmail", "both")
+    search_drive = source in ("drive", "both")
+
+    emails = _search_gmail(gmail_svc, query) if gmail_svc and search_gmail else []
+    files = _search_drive(drive_svc, query) if drive_svc and search_drive else []
 
     if not emails and not files:
         logger.info("No results from Gmail/Drive — returning empty result")

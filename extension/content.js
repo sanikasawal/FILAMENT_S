@@ -3,7 +3,7 @@
 // ══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
 // ══════════════════════════════════════════════════════════════════════════════
-const DEFAULT_WS_URL = 'ws://localhost:8080/ws';
+const DEFAULT_WS_URL = 'wss://filament-orchestrator-sjs5thynia-uc.a.run.app/ws';
 const FRAME_INTERVAL_MS = 3000; // 1 frame every 3s — enough for the model, less noise
 const AUDIO_SAMPLE_RATE = 16000;
 const RECONNECT_DELAY_MS = 2000;

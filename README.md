@@ -60,30 +60,39 @@ Built for the **Build With AI NYC Hackathon 2026** — Live Agent Category.
 
 ## Demo Scenarios
 
-### Scenario 1: The Incomplete Invoice (Main Demo)
+### Scenario 1: Missing Data in a Spreadsheet
 ```
-User opens Google Sheet → invoice with empty Tax Rate cell
+User opens Google Sheet with empty cells
         ↓  (Filament watches for ~8 seconds)
-Filament calls fetch_workspace_context("invoice tax rate NYC")
-        ↓  (finds boss's email)
-Filament speaks: "The tax rate on row 14 looks empty.
-                  Your boss Sarah mentioned 8.5% for NYC clients on Tuesday."
+Filament calls fetch_workspace_context("...based on what it sees...")
+        ↓  (searches Gmail for relevant context)
+Filament speaks: "That cell looks empty. I found a recent email
+                  with the value you need — want me to pull it up?"
 ```
 
 ### Scenario 2: Navigation Detection
 ```
-User switches from Google Sheets → Gmail
-        ↓  (background.js detects navigation pattern)
-Filament speaks: "You're probably here to send the invoice —
-                  I can see the file was last edited 47 minutes ago."
+User switches from Google Docs → Gmail
+        ↓  (Filament detects the pattern)
+Filament speaks: "You're probably here to follow up on that thread —
+                  I can pull the latest email about it."
 ```
 
 ### Scenario 3: Morning Brief
 ```
 User opens new tab before 11am
-        ↓  (morning_brief trigger)
-Filament speaks: "Good morning! You have 3 unread emails,
-                  and the Q1 report was shared with you yesterday."
+        ↓  (morning brief trigger)
+Filament speaks: "Good morning! You have unread emails
+                  and a recent file was shared with you."
+```
+
+### Scenario 4: Voice Query
+```
+User says: "What was the last email I sent?"
+        ↓  (Filament hears the question)
+Filament calls fetch_workspace_context("in:sent newer_than:1d", source="gmail")
+        ↓  (finds the email)
+Filament speaks the answer directly
 ```
 
 ---
@@ -137,49 +146,62 @@ filament/
 ## Quick Start
 
 ### Prerequisites
-- Python 3.11+
-- Google API Key (from [AI Studio](https://aistudio.google.com))
+- Python 3.11+ — install via `brew install python@3.11` (Mac) or [python.org](https://python.org)
 - Chrome browser
-- Google Cloud project with Gmail & Drive APIs enabled (for live workspace data)
+- A free Gemini API key — takes 2 minutes (see Step 1 below)
 
-### 1. Backend
+---
+
+### Step 1 — Get a Gemini API Key (free)
+
+1. Go to [aistudio.google.com](https://aistudio.google.com)
+2. Sign in with your Google account
+3. Click **"Get API Key"** in the left sidebar → **"Create API Key"**
+4. Copy the key (looks like `AIzaSy...`)
+
+---
+
+### Step 2 — Run the Backend
 
 ```bash
 cd backend
-python -m venv .venv
+
+# Create a virtual environment
+python3.11 -m venv .venv
 source .venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
 
-# Create .env file
-cat > .env << 'EOF'
-GOOGLE_API_KEY=your_gemini_api_key
-AGENT_MODE=local
-EOF
+# Set up your environment
+cp .env.example .env
+# Open .env and paste your Gemini API key from Step 1
 
-# Run
+# Start the backend
 python main.py
 ```
 
 The backend starts on `http://localhost:8080`.
 
-### 2. Chrome Extension
+---
 
-1. Open `chrome://extensions/`
-2. Enable **Developer mode** (top right)
-3. Click **Load unpacked** → select the `extension/` folder
-4. Navigate to any webpage
-5. Click the **Filament orb** (bottom right corner)
-6. Grant screen sharing and microphone permissions
-7. Start talking or just watch — Filament will speak when it sees something useful
+### Step 3 — Load the Chrome Extension
 
-### 3. OAuth (Optional — for live Gmail/Drive)
+1. Open `chrome://extensions/` in Chrome
+2. Enable **Developer mode** (toggle, top right)
+3. Click **Load unpacked** → select the `extension/` folder from this repo
+4. The Filament orb will appear on every webpage (bottom right corner)
 
-To access real workspace data instead of empty results:
+---
 
-1. Set up OAuth 2.0 credentials in Google Cloud Console
-2. Add the OAuth client ID to `manifest.json` under `oauth2.client_id`
-3. The extension sends the OAuth token to the backend on WebSocket connect
-4. The backend uses it to query Gmail and Drive on your behalf
+### Step 4 — Sign in & Use Filament
+
+1. Navigate to any webpage
+2. Click the **Filament orb**
+3. Click **Sign in with Google** — grant Gmail and Drive access
+4. Click the orb again to start a session
+5. Grant **screen sharing** and **microphone** permissions when prompted
+6. Filament is now watching your screen and listening — speak naturally or just work and it will nudge you when it sees something useful
 
 ---
 
