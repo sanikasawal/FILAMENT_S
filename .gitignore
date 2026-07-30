@@ -3,6 +3,17 @@
 *.env
 backend/.env
 .env.*
+!backend/.env.example
+
+# ── Credentials & keys ──
+*.pem
+*.key
+*.p12
+credentials.json
+token.json
+client_secret*.json
+service-account*.json
+gcloud-*.json
 
 # ── Documents (hackathon planning docs — not for repo) ──
 *.docx
@@ -18,8 +29,18 @@ live-api-web-console/
 cli/
 Untitled/
 
+# ── Scratch / captured terminal output ──
+comaand outpu.md
+*-output.md
+*.out
+
 # ── Python build artifacts ──
 __pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 *.py[cod]
 *.pyo
 *.pyd
@@ -38,6 +59,8 @@ env/
 # ── Chrome Extension build artifacts ──
 extension/dist/
 extension/node_modules/
+*.crx
+*.zip
 
 # ── Node / JS ──
 node_modules/
