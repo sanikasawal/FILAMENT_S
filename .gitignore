@@ -34,6 +34,11 @@ comaand outpu.md
 *-output.md
 *.out
 
+# ── Local-only docs (not for the repo) ──
+CLAUDE.md
+Hackathon Rules.md
+PRIVACY.md
+
 # ── Python build artifacts ──
 __pycache__/
 .pytest_cache/
